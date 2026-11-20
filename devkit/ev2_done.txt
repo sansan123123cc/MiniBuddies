@@ -52,3 +52,6 @@ towa	spring summer bday	2026-11-20
 luna	spring summer bday	2026-11-20
 lamy	spring summer bday	2026-11-20
 nene	spring summer bday	2026-11-20
+botan	spring summer bday	2026-11-20
+polka	spring summer bday	2026-11-20
+laplus	spring summer bday	2026-11-20
