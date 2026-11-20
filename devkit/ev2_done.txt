@@ -50,3 +50,5 @@ kanata	spring summer bday	2026-11-20
 watame	spring summer bday	2026-11-20
 towa	spring summer bday	2026-11-20
 luna	spring summer bday	2026-11-20
+lamy	spring summer bday	2026-11-20
+nene	spring summer bday	2026-11-20
