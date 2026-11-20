@@ -67,3 +67,5 @@ hajime	spring summer bday	2026-11-20
 mio	spring summer bday	2026-11-20
 okayu	spring summer bday	2026-11-20
 korone	spring summer bday	2026-11-20
+riona	spring summer bday	2026-11-20
+niko	spring summer bday	2026-11-20
