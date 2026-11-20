@@ -5219,24 +5219,29 @@ class SettingsDialog(QDialog):
         self.app = app
         self.setWindowTitle(f"환경설정 — {APP_NAME}")
         self.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint | Qt.WindowMinimizeButtonHint)   # 항상 위 X (보고 있을 때만 펫보다 위)
-        self.setMinimumWidth(760)                      # 탭 8개가 화살표 없이 다 보이게
+        self.setMinimumWidth(640)
         self.setStyleSheet("QDialog{background:#fff7fb;} QPushButton{padding:4px 14px;}")
         tabs = QTabWidget()
         self.picks = {}
         self.group_btns = []
         self.group_scr = []
-        if app.one_each and len(app.roster) >= 2:
-            tabs.addTab(self.tab_chars(), "캐릭터")
         self.outfit_box = {}
+        # 탭 5개: 캐릭터 · 화면·움직임 · 알림·노래 · Claude · 업데이트 (예전 8개 탭을 묶음)
+        etc_w = self.tab_etc()                 # Claude 탭 (여기서 만든 자동 실행·자리 비움 마중은 '화면·움직임'으로)
+        parts = []
+        if app.one_each and len(app.roster) >= 2:
+            parts.append(("부를 친구", self.tab_chars()))
         if app.outfits:
-            tabs.addTab(self.tab_outfit(), "의상")
-        tabs.addTab(self.tab_screen(), "화면")
-        tabs.addTab(self.tab_play(), "움직임")
-        tabs.addTab(self.tab_alarm(), "알림")
-        tabs.addTab(self.tab_music(), "노래")
+            parts.append(("의상", self.tab_outfit()))
+        if parts:
+            tabs.addTab(self._stack(parts), "캐릭터")
+        tabs.addTab(self._stack([("화면", self.tab_screen()), ("움직임", self.tab_play()),
+                                 ("그 밖에", self.tab_more())]), "화면·움직임")
+        tabs.addTab(self._stack([("알림 시각", self.tab_alarm()), ("노래 목록", self.tab_music())]), "알림·노래")
         self.tabs = tabs
-        tabs.addTab(self.tab_etc(), "기타")
-        tabs.addTab(self.tab_update(), "업데이트")
+        tabs.addTab(etc_w, "Claude")
+        tabs.addTab(self._stack([("", self.tab_update()),
+                                 ("", QLabel("설정은 프로그램 폴더의 settings.json 에 저장돼요."))]), "업데이트")
         # 탭 내용이 길어도 창이 모니터 밖으로 넘치지 않게 — 탭마다 스크롤 영역으로 감싸기
         from PyQt5.QtWidgets import QScrollArea, QFrame
         _nat = tabs.sizeHint()
@@ -5601,6 +5606,38 @@ class SettingsDialog(QDialog):
         self.sz.setCurrentIndex(i if i >= 0 else self.sz.count() - 1)
 
     # 움직임: 흔들림 · 자동 단체 놀이 · 말풍선
+    def _stack(self, parts):
+        """여러 탭 내용을 제목 상자로 묶어 한 탭에 위아래로"""
+        w = QWidget(); v = QVBoxLayout(w)
+        for title, wid in parts:
+            if wid is None:
+                continue
+            if title:
+                g = QGroupBox(title); gl = QVBoxLayout(g); gl.setContentsMargins(8, 6, 8, 6)
+                gl.addWidget(wid); v.addWidget(g)
+            else:
+                v.addWidget(wid)
+        v.addStretch(1)
+        return w
+
+    def tab_more(self):
+        """예전 우클릭에 있던 켜고 끄기 + 자동 실행 + 자리 비움 마중"""
+        w = QWidget(); v = QVBoxLayout(w)
+        v.addWidget(self.au)
+        self.cp_cb = QCheckBox("커서랑 놀기 (쫓아오기·어지러움)")
+        self.cp_cb.setChecked(self.app.cfg.get("cursor_play", True))
+        self.sy_cb = QCheckBox("컴퓨터 상태에 반응 (배터리·인터넷·늦은 밤)")
+        self.sy_cb.setChecked(self.app.cfg.get("sys_react", True))
+        self.slp_cb = QCheckBox("수면 모드 (구석에서 자기)")
+        self.slp_cb.setChecked(bool(self.app.cfg.get("sleep_mode", False)))
+        self.rst_cb = QCheckBox("제자리 모드 (그 자리에서 책·게임·뒹굴)")
+        self.rst_cb.setChecked(bool(self.app.cfg.get("rest_mode", False)))
+        for cb in (self.cp_cb, self.sy_cb, self.slp_cb, self.rst_cb):
+            v.addWidget(cb)
+        if getattr(self, "iwg_box", None) is not None:
+            v.addWidget(self.iwg_box)
+        return w
+
     def tab_play(self):
         w = QWidget(); f = QFormLayout(w)
         self.ag = QCheckBox("내버려 둬도 알아서 단체 놀이·합동 장면"); self.ag.setChecked(self.app.cfg.get("auto_group", True))
@@ -5709,9 +5746,8 @@ class SettingsDialog(QDialog):
     def tab_etc(self):
         w = QWidget(); f = QFormLayout(w)
         self.au_start = self.app.autostart_on()
-        self.au = QCheckBox("윈도우 켤 때 자동 실행"); self.au.setChecked(self.au_start)
-        f.addRow("", self.au)
-        f.addRow("", QLabel("설정은 프로그램 폴더의 settings.json 에 저장돼요."))
+        self.au = QCheckBox("윈도우 켤 때 자동 실행"); self.au.setChecked(self.au_start)   # → '화면·움직임' 탭에 붙임
+        later = []                             # 물어보기와 따로 보여 줄 Claude 묶음 (수다·브리핑)
         ask = QGroupBox("캐릭터에게 물어보기")
         ag = QVBoxLayout(ask)
         self.ask_dbl = QCheckBox("캐릭터를 따닥(더블클릭)하면 Claude 새 대화로 물어보기")
@@ -5761,7 +5797,7 @@ class SettingsDialog(QDialog):
         tb = QPushButton("지금 한 번 수다 떨게 하기")
         tb.clicked.connect(lambda: self.app.start_ai_chat(force=True) or None)
         acv.addRow("", tb)
-        ag.addWidget(ac)
+        later.append(ac)
         bg = QGroupBox("관심사 브리핑 (하루 한 번 검색해서 알려 주기, Claude 사용량이 들어요)")
         bgv = QFormLayout(bg)
         self.brief_on = QCheckBox("매일 정한 시간에 관심사 소식 브리핑 받기")
@@ -5778,7 +5814,7 @@ class SettingsDialog(QDialog):
         bb.clicked.connect(lambda: (self.app.cfg.__setitem__("brief_keys", [k.text().strip() for k in self.brief_keys if k.text().strip()][:5]),
                                     self.app.start_briefing(force=True)) and None)
         bgv.addRow("", bb)
-        ag.addWidget(bg)
+        later.append(bg)
         iwg = QGroupBox("자리 비움 마중")
         iwv = QFormLayout(iwg)
         self.idle_welcome = QCheckBox("한동안 컴퓨터를 안 만지면 졸다가, 돌아오면 달려와서 '어서 와~!'")
@@ -5787,7 +5823,7 @@ class SettingsDialog(QDialog):
         self.idle_min = QSpinBox(); self.idle_min.setRange(1, 120); self.idle_min.setSuffix(" 분")
         self.idle_min.setValue(int(self.app.cfg.get("idle_min", 5)))
         iwv.addRow("자리 비움 판단", self.idle_min)
-        ag.addWidget(iwg)
+        self.iwg_box = iwg                      # → '화면·움직임' 탭에 붙임
         # 작업 권한: 숨겨서 물을 때 Claude 가 내 컴퓨터 파일·프로그램을 다룰 수 있게
         pw = QGroupBox("작업 권한 (숨겨서 물을 때)")
         pv = QVBoxLayout(pw)
@@ -5817,7 +5853,6 @@ class SettingsDialog(QDialog):
                       "중요한 폴더는 넣지 말고 작업용 폴더만 넣어 주세요. 지우기·설치·시스템 설정 변경은 하지 않고 방법만 알려 줘요.")
         warn.setWordWrap(True); warn.setStyleSheet("color:#b04a6a;")
         pv.addWidget(warn)
-        ag.addWidget(pw)
         self.ask_room = QComboBox()
         self.ask_room.addItem("대화 기억: 모두 한 방에서 이어서 (친구들 이야기도 다 기억)", "one")
         self.ask_room.addItem("대화 기억: 캐릭터마다 따로", "each")
@@ -5838,7 +5873,19 @@ class SettingsDialog(QDialog):
         self.ask_send = QCheckBox("질문을 바로 보내기 (Claude 창이 맨 앞에 뜨면 Enter 를 대신 눌러 줌)")
         self.ask_send.setChecked(self.app.cfg.get("ask_send", True))
         ag.addWidget(self.ask_send)
+        ag.addWidget(pw)                       # 작업 권한은 물어보기 맨 아래
         f.addRow(ask)
+        for g_ in later:
+            f.addRow(g_)
+        ug = QGroupBox("사용량 창 (claude.ai 사용량을 작은 창으로)")
+        ugl = QVBoxLayout(ug)
+        self.ua_cb = QCheckBox("80%·95% 넘으면 펫이 말풍선으로 알려 주기")
+        self.ua_cb.setChecked(self.app.cfg.get("usage_alert", True))
+        ugl.addWidget(self.ua_cb)
+        ub = QPushButton("사용량 창 띄우기")
+        ub.clicked.connect(lambda: self.app.open_usage())
+        ugl.addWidget(ub)
+        f.addRow(ug)
         box = QGroupBox("Claude 연결 (MCP)")
         g = QVBoxLayout(box)
         self.mcp_on = QCheckBox("Claude 가 펫을 움직일 수 있게 하기 (이 컴퓨터 안에서만)")
@@ -6061,6 +6108,15 @@ class SettingsDialog(QDialog):
         if hasattr(self, "maxon_sp") and self.maxon_sp.value() != app.cap():
             cfg["max_on"] = self.maxon_sp.value()
             app.max_changed()
+        if hasattr(self, "cp_cb"):
+            cfg["cursor_play"] = self.cp_cb.isChecked()
+            cfg["sys_react"] = self.sy_cb.isChecked()
+            if self.slp_cb.isChecked() != bool(cfg.get("sleep_mode", False)):
+                app.set_sleep(self.slp_cb.isChecked())
+            if self.rst_cb.isChecked() != bool(cfg.get("rest_mode", False)):
+                app.set_rest(self.rst_cb.isChecked())
+        if hasattr(self, "ua_cb"):
+            cfg["usage_alert"] = self.ua_cb.isChecked()
         app.save_cfg()
         # 모니터 (바뀌었을 때만 이사)
         i = self.mon.currentIndex()
@@ -7118,7 +7174,7 @@ class App:
             if not getattr(self, "usage_quitting", False) and self.cfg.get("usage_widget"):
                 self.cfg["usage_widget"] = False
                 self.save_cfg()
-        if not self.cfg.get("usage_widget"):
+        if not self.cfg.get("usage_widget") or not self.cfg.get("usage_alert", True):
             return
         try:
             d = json.load(open(self.USAGE_JSON, encoding="utf-8"))
@@ -9628,7 +9684,6 @@ class App:
     def menu(self, pos, who):
         """우클릭 메뉴: 놀이·부르기만. 설정은 '환경설정…' 창으로"""
         top = QMenu()
-        self.passthru_menu(top)
         m = QMenu("다 같이 · 부르기 · 놀이")          # 캐릭터와 상관없는 메뉴는 한 칸 안으로
         # 1) 멤버
         if self.one_each and len(self.roster) >= 2:
@@ -9716,35 +9771,38 @@ class App:
         lab = self.chars[who.char]["label"]
         top.addSection(lab)
         ah = top.addAction(self.aff_text(who.char)); ah.setEnabled(False)
+        top.addAction(f"{lab}에게 물어보기…", lambda: self.ask_claude(who))
+        wm = QMenu(f"{lab}이랑 놀기 · 옷")          # 이 아이 전용 동작·옷·이벤트는 한 칸 안으로
         lst = self.chars[who.char].get("persona") or []
         if lst:
-            pm = top.addMenu("개성 동작")
+            pm = wm.addMenu("개성 동작")
             for i, it in enumerate(lst):
                 pm.addAction(it[5][0], lambda i=i: self.force_persona(who, i))
         if who.has_frame(F["shoot_ready"]):
-            top.addAction("사격 개시! (뒷모습)", lambda: (self.ground(who), who.do_shoot()))
+            wm.addAction("사격 개시! (뒷모습)", lambda: (self.ground(who), who.do_shoot()))
         if who.char in ("scarlet", "dorothy") and self.apple_pair():
-            top.addAction("홍북이의 사과 베기 (도로롱)", self.apple_cut)
+            wm.addAction("홍북이의 사과 베기 (도로롱)", self.apple_cut)
         if who.char in TRANSFORM and TRANSFORM[who.char]["alt"] in self.outfits.get(who.char, {}):
             alt_on = self.outfit.get(who.char) == TRANSFORM[who.char]["alt"]
-            top.addAction("변신 풀기" if alt_on else f"변신! ({OUTFIT_NAME.get(TRANSFORM[who.char]['alt'])})",
+            wm.addAction("변신 풀기" if alt_on else f"변신! ({OUTFIT_NAME.get(TRANSFORM[who.char]['alt'])})",
                           lambda: self.transform(who.char))
         ofs = self.outfits.get(who.char, {})
         if len(ofs) > 1:
-            om = top.addMenu("모습 바꾸기" if who.char in TRANSFORM else "옷 갈아입기")
+            om = wm.addMenu("모습 바꾸기" if who.char in TRANSFORM else "옷 갈아입기")
             for of in ofs:
                 a = om.addAction(OUTFIT_NAME.get(of, of), lambda of=of: self.set_outfit(who.char, of))
                 a.setCheckable(True); a.setChecked(self.outfit.get(who.char) == of)
-        top.addAction(f"{lab}에게 물어보기…", lambda: self.ask_claude(who))
-        _osong_menu(self, top, who)  # 변신 노래 켜고 끄기
-        _ev_menu(self, top, who)  # 계절 이벤트 코스튬
+        _osong_menu(self, wm, who)  # 변신 노래 켜고 끄기
+        _ev_menu(self, wm, who)  # 계절 이벤트 코스튬
         _dm = DMODE.get(f"{who.char}@{self.outfit.get(who.char)}")  # 도로시 모드 변신 (피나 전개 / 일반 모드)
         if _dm and who.has_frame(116):
-            top.addAction(_dm["menu"], lambda: self.dmode_play(who, force=True))
+            wm.addAction(_dm["menu"], lambda: self.dmode_play(who, force=True))
         if _pepero_day():
-            top.addAction(f"{lab}의 빼빼로 놀이", lambda: self.pepero_event(force=True, who=who))
+            wm.addAction(f"{lab}의 빼빼로 놀이", lambda: self.pepero_event(force=True, who=who))
         if self.one_each:
-            top.addAction("잠깐 외출 보내기", lambda: self.leave(who, travel=True) if who.surface else None)
+            wm.addAction("잠깐 외출 보내기", lambda: self.leave(who, travel=True) if who.surface else None)
+        if wm.actions():
+            top.addMenu(wm)
         top.addSeparator()
         if m.actions():
             top.addMenu(m)
@@ -9760,45 +9818,24 @@ class App:
                              lambda: self.player_show(not getattr(self, "yt_shown", False)))
             mu.addAction(f"노래 끄기 ({self.music_on})", self.stop_music)
         mu.addSeparator()
-        mu.addAction("노래 목록 편집…", lambda: self.open_settings("노래"))
+        mu.addAction("노래 목록 편집…", lambda: self.open_settings("알림·노래"))
         rems = self.cfg.get("reminders", [])
         if rems:
             rm_ = top.addMenu(f"예약 알림 ({len(rems)})")
             for i, r in enumerate(rems):
                 rm_.addAction(f"{r['label']}  {r['text'][:30]}  — 취소", lambda i=i: self.cancel_reminder(i))
-        top.addAction("Claude 사용량 보기", self.open_usage)
-        bm = top.addMenu("관심사 브리핑")
+        cm_ = top.addMenu("Claude")
+        cm_.addAction("사용량 보기", self.open_usage)
+        bm = cm_.addMenu("관심사 브리핑")
         bm.addAction("지금 브리핑 받기", lambda: self.start_briefing(force=True))
         bm.addAction("오늘 브리핑 보기", self.open_briefing)
         bon = bm.addAction("매일 자동으로 받기")
         bon.setCheckable(True); bon.setChecked(self.cfg.get("brief_on", False))
         bon.triggered.connect(lambda on: (self.cfg.__setitem__("brief_on", bool(on)), self.save_cfg()))
-        bm.addAction("키워드·시간 설정…", lambda: self.open_settings("기타"))
-        iw = top.addAction("자리 비우면 졸다가 마중 나오기")
-        iw.setCheckable(True); iw.setChecked(self.cfg.get("idle_welcome", True))
-        iw.triggered.connect(lambda on: (self.cfg.__setitem__("idle_welcome", bool(on)), self.save_cfg()))
-        ai = top.addAction("캐릭터끼리 수다 (Claude)")
-        ai.setCheckable(True); ai.setChecked(self.cfg.get("ai_chat", False))
-        ai.triggered.connect(lambda on: (self.cfg.__setitem__("ai_chat", bool(on)), self.save_cfg(),
-                                         on and self.claude_cli() and self.start_ai_chat(force=True)))
-        sy = top.addAction("컴퓨터 상태에 반응 (배터리·인터넷·늦은 밤)")
-        sy.setCheckable(True); sy.setChecked(self.cfg.get("sys_react", True))
-        sy.triggered.connect(lambda on: (self.cfg.__setitem__("sys_react", bool(on)), self.save_cfg()))
-        cp = top.addAction("커서랑 놀기 (쫓아오기·어지러움)")
-        cp.setCheckable(True); cp.setChecked(self.cfg.get("cursor_play", True))
-        cp.triggered.connect(lambda on: (self.cfg.__setitem__("cursor_play", bool(on)), self.save_cfg()))
-        ca = top.addAction("마우스 커서 피해 다니기 (Ctrl 누르면 쓰담)")
-        ca.setCheckable(True); ca.setChecked(self.cfg.get("cursor_avoid", True))
-        ca.triggered.connect(lambda on: (self.cfg.__setitem__("cursor_avoid", bool(on)), self.save_cfg()))
-        ot = top.addAction("항상 위에 두기")
-        ot.setCheckable(True); ot.setChecked(self.on_top)
-        ot.triggered.connect(lambda on: self.set_on_top(on))
-        slp = top.addAction("수면 모드 (구석에서 자기)")
-        slp.setCheckable(True); slp.setChecked(bool(self.cfg.get("sleep_mode", False)))
-        slp.triggered.connect(lambda on: self.set_sleep(on))
-        rst = top.addAction("제자리 모드 (그 자리에서 책·게임·뒹굴)")
-        rst.setCheckable(True); rst.setChecked(bool(self.cfg.get("rest_mode", False)))
-        rst.triggered.connect(lambda on: self.set_rest(on))
+        bm.addAction("키워드·시간 설정…", lambda: self.open_settings("Claude"))
+        top.addSeparator()
+        self.passthru_menu(top)             # 터치 OFF · 투명도
+        # 켜고 끄는 옵션(마중·수다·커서·항상 위·수면·제자리 …)은 환경설정 '화면·움직임' / 'Claude' 탭으로 옮김
         top.addAction("환경설정…", self.open_settings)
         top.addAction("종료", self.qapp.quit)
         def _menus(mn, seen, par=None, act=None):
@@ -9889,6 +9926,10 @@ class App:
             sm.setCheckable(True)
             tm.aboutToShow.connect(lambda: sm.setChecked(bool(self.cfg.get("sleep_mode", False))))
             sm.triggered.connect(lambda on: self.set_sleep(on))
+            rs = tm.addAction("제자리 모드 (그 자리에서 책·게임·뒹굴)")
+            rs.setCheckable(True)
+            tm.aboutToShow.connect(lambda: rs.setChecked(bool(self.cfg.get("rest_mode", False))))
+            rs.triggered.connect(lambda on: self.set_rest(on))
             tm.addSeparator()
             tm.addAction("코덱무관플레이어", lambda: self.open_app("player"))
             tm.addAction("이름표 (이미지 파일명 편집기)", lambda: self.open_app("nametag"))
