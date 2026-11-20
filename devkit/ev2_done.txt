@@ -41,4 +41,6 @@ aqua	spring summer bday	2026-11-19
 shion	spring summer bday	2026-11-19
 ayame	spring summer bday	2026-11-19
 choco	spring summer bday	2026-11-19
-subaru	spring summer	2026-11-19
+subaru	spring summer bday	2026-11-20
+marine	spring summer bday	2026-11-20
+noel	spring summer bday	2026-11-20
