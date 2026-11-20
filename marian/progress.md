@@ -1,0 +1,120 @@
+# 마리안 4벌 전면 재제작 (2026-11-12~)
+- refs: artifact MWxNePB1pae5QLBpzAZvS3 (#s 스타일=mb_s1, #m #f #q #l); screenshot ids in refs/ids.txt
+- VV keys: mm(모더니아) mf(퍼스트어펙션 새 의상 marian@firstaffection) mq(퀸) ml(웨딩 lastaffection); rem: localStorage <key>_rem
+- send: sendp(localStorage.getItem('mm_rem')+mk(n,'mm')); first msg custom (__t1)
+- tile helper in localStorage tile_h (eval holo_h then tile_h)
+- chats: mm 6af57cf6-f554-83ee-adcd-f3b318e750d1 (DONE, uploaded) ; mq 6af5817f-b71c-83ec-8a65-ce8b1346bb36
+- sheets saved msheets/<pfx>_s1..s8, _wx, _gm, _tf
+- build: bash marian/mbuild2.sh <outfit> <pfx> refs...
+- transforms: basic+modernia 76-83 (marian->modernia, home 76), queen 84-91 (marian->queen), lastaffection 84-91 (marian->bride)
+## done
+- mm_s1
+- mm_s2
+- mm_s3
+- mm_s4
+- mm_s5
+- mm_s6
+- mm_s7 (group prompt reworded: __t7 style)
+- mm_s8 (hair pink drift → marian/hairfix.py applied at build; raw in msheets/raw)
+- mm_wx (raw)
+- mm_gm (raw)
+- modernia built+tf 76-83 (basic40 + glitch(basic57) + tf2..7); zip mm_up.zip
+- queen chat started (mq)
+- NOTE screenshot ids expire: re-shoot artifact view (#q etc) at scale 1 right before upload_image
+- mq_s1
+- mq_s2
+- mq_s3
+- mq_s4
+- mq_s5
+- mq_s6
+- mq_s7
+- DECISION: 퀸은 기존 스프라이트 유지 (user: 기존이 더 닮음). 퀸 변신 84~87의 예전 마리안만 교체 → queen chat에서 '마리안이 다크매터에 삼켜지는' 시트(mq_tf) 요청함
+- next: 웨딩(ml) 새 대화, 퍼스트어펙션(mf) 새 대화 (+코드: OUTFIT_NAME firstaffection, PERSONA 등 PC+앱)
+- mq_tf (마리안→다크매터 8칸, 1448x1086 4x2) saved raw; use cells 0,1,5,6 for queen 84-87
+- USER: "일단 작업은 시도해봐 다시" → 퀸 새 대화(mq2)로 재시도: 은백색(분홍X)+검은 반투명 보디슈트(갈색X)+왕관 검은 세로줄, 기존 퀸 스프라이트도 참고 첨부
+- mq2 chat 6af58534-3248-83ec-bd26-92708510e900 (3 attachments: official, style, old queen)
+- mq2_s1
+- USER gave official close-ups → crop+upscale official (refs/queen_detail.png, artifact #d). mq3 chat 6af586bd-a704-83ec-9fd1-0675c8ad63f6 (attach: #q, #d, #s). send via mkq(n) (eval localStorage mkq_h). mq2 abandoned (crosses/chain).
+- mq3: mq_s1 (overwrote raw/mq_s1; old first attempt mq_* raw s2-s7 obsolete!)
+- mq3 s1 redo with black hair bridge (not ornament) → raw/mq_s1
+- mq3 s2
+- mq3 s3
+- mq3 s4
+- mq3 s5
+- mq3 s6
+- mq3 s7 (drift: brown suit, pink hair → need darkfix+hairfix)
+- mq3 s8, wx done; qfix.py for color
+- mq3 gm; all mq sheets qfixed into msheets/; tf requested
+- queen built (0-75,84-91,100-115) zip mq_up.zip
+- queen uploaded (commit). NEXT: wedding ml new chat, refs #l + #w2(new promo upscaled) + #s
+- ml chat 6af58bb7-1b10-83e8-a8f5-0cae4d07539f; send via mkw(n) (eval mkw_h)
+- ml_s1
+- ml_s2
+- ml_s3
+- ml_s4
+- ml_s5
+- ml_s6
+- ml_s7
+- ml_s8
+- USER: wedding has NO white bridge → redo all ml sheets (old in raw/old_ml1)
+- ml(v2) s1 no bridge
+- ml v2 s2
+- ml v2 s3
+- ml v2 s4 (hair turning reddish)
+- ml v2 s5 s6; brownfix.py for hair
+- ml v2 s7
+- ml v2 s8
+- ml v2 wx; gm requested
+- ml v2 gm; all brownfixed; tf requested
+- lastaffection built (0-75,84-91 tf,100-115) zip ml_up.zip
+- lastaffection uploaded. mf chat 6af592df-3268-83ee-9b6a-8df41979e029 (attach #f, #m gun, #s); send mkf(n) (eval mkf_h)
+- mf_s1
+- mf_s2
+- mf_s3
+- mf_s4
+- mf_s5
+- mf_s6
+- mf_s7
+- mf_s8
+- mf_wx
+- firstaffection built; fa_block.py written
+- firstaffection sprites + fa_block committed; next verify APK build
+- WEDDING v3 (user: dress & attack 아쉬움): refs from YT costume PV zSaok3QLtwU + review F81bDJwRX1Q (official SD lobby 740-860s). refs/wed/*.png, artifact #ws #wc #wd
+- ml v3 chat 6af6b654-435c-83ec-8c87-a534276372ac (attach #wd #ws #wc #s; '네 번째 견본'); send mkw(n) (eval mkw_h); old v2 raw in raw/old_ml2
+- ml v3 s1
+- ml v3 s2
+- ml v3 s3
+- ml v3 s4
+- ml v3 s5
+- ml v3 s6
+- ml v3 s7; s8 custom combat sent
+- ml v3 s8 (game-accurate combat)
+- ml v3 wx; gm sent
+- ml v3 gm; tf sent
+- ml v3 built + tf; zip ml3.zip; wed3_block.py
+- ml v3 uploaded + lines; builds #197 ok, #198 running
+- ml v4: comparison ref (artifact #cmp, refs/wed/cmp.png) sent into ml v3 chat; viewport now 1151x633 (tq offsets auto); new tabs 695720914 chatgpt, 695720913 artifact
+- ml v4 s1 (cmp ref) good: veil behind, small ribbon, blue eyes
+- ml v4 s2 (offsets now 1448: 297/453, 1774: 623/254)
+- ml v4 s3
+- ml v4 s4
+- ml v4 s5
+- ml v4 s6
+- ml v4 s7; s8 sent
+- ml v4 s8; wx sent
+- ml v4 wx; gm sent
+- ml v4 all sheets built (tf pending)
+- ml v4 tf built (84=basic40, 85-91 tf1-7); zip ml4.zip committed 0a59fd2 '마리안 웨딩 스프라이트 v4'
+- ml v4 dressfix (lavender→white, marian/dressfix.py, skip 84-88); zip ml4b.zip
+## 계절 이벤트 코스튬 (2026-11-16)
+- 코드: PC ev_block(EV_OFF 130/138/146/154, buddies.py main 위) + 앱 Event.kt/Pet.kt/PetService.kt/PetData.kt, export_data(event)·prep_assets(meta_event) 커밋됨
+- 흐름: 탭 695720914(vp1151) / 695721180(vp1575, tq OFF 199:0 0:132 199:132) 두 개 병렬, GitHub 탭 695720913 refov
+- evsend(EVP(name,'xmas')) → EVN hanbok/halloween/valentine; ev_build.sh <id> <kind>; ev_pack.sh <bN> ids → incoming + devkit/ev_done.txt
+- 완료 업로드(4종): elysia yuni kanna huya hina mashiro lize tabi rin riko shibuki(머리카락뿔로 재작업 b11) nana toa rang hiyori mary bingha (b1~b8), rapi anis marian dorothy scarlet rapunzel chune arisa karin eris ellie dokcake delia (b9~b16)
+- 부분: sora(xmas hanbok halloween, valentine 남음) roboco(xmas hanbok, halloween valentine 남음) b17
+- 2026-11-17: b18~b38 업로드. sora roboco miko~ririka 4종 완료, raden 3종(valentine 남음)
+- 2026-11-18: b39~b43 업로드 — raden valentine, hajime mio okayu korone riona niko su chihaya vivi 4종 → 전체 73캐릭터 완료
+- 주의: 캡처 스크린샷은 scale 없이(1.0) 찍어야 함 — 0.4로 찍으면 프레임이 0px로 잘림
+- ev_pack.sh 가 이제 ev_done.txt 를 zip 안에 같이 넣음(커밋 1번)
+- 큰 시트 크기 주의: 1536x1024(tq OFF 0:0/0:269 두 장), 1692x929(OFF 117/174) 같은 변형 나옴 → tq 출력 OFF 그대로 st.py에
+- 예약작업 trig_01TNVDoVYAGKGAvLQkA4GY3Q 꺼둠 (끝까지 못하면 다시 켜기)

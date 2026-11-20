@@ -1,0 +1,49 @@
+﻿스텔라이브 펫 — GitHub 자동 업데이트 가이드
+==========================================
+
+이 폴더(다운로드\stellive_buddies\stellive_buddies)가 '원본'이에요.
+원본을 GitHub 비공개 저장소에 올리면, 설치 파일로 깐 펫들이 알아서 새 버전을 받아요.
+
+
+[처음 한 번만] 1. 비공개 저장소 만들기
+  - https://github.com/new 접속
+  - Repository name: stellive-pet (아무 이름이나 OK)
+  - Private 선택
+  - README / .gitignore / license 는 전부 체크하지 말고(비어 있게) → Create repository
+  - 화면에 나오는 주소(https://github.com/내아이디/stellive-pet)를 복사해 둠
+
+
+[처음 한 번만] 2. 읽기 전용 토큰 만들기 (설치된 펫이 업데이트를 받을 때 씀)
+  - https://github.com/settings/personal-access-tokens/new 접속
+  - Token name: stellive-pet-read
+  - Expiration: 원하는 만큼 길게 (만료되면 새로 만들어서 펫 환경설정 → 업데이트에 넣으면 됨)
+  - Repository access: Only select repositories → stellive-pet
+  - Permissions → Repository permissions → Contents: Read-only  (나머지는 건드리지 않기)
+  - Generate token → github_pat_... 로 시작하는 토큰 복사
+
+
+3. 올리기: 이 폴더의 PUBLISH_GITHUB.bat 더블클릭
+  - 처음이면 Git 이 없을 때 알아서 깔고, 저장소 주소와 토큰을 물어봐요
+  - 처음 올릴 때 GitHub 로그인 창이 뜨면 로그인(Sign in with your browser)
+  - 끝나면 한 단계 위 폴더(다운로드\stellive_buddies)에 INSTALL_STELLIVE.bat 이 생겨요
+  - 내 설정(settings.json), 대화기록, 로그는 올라가지 않아요
+
+
+4. 설치: INSTALL_STELLIVE.bat 더블클릭 (이 컴퓨터든 다른 컴퓨터든)
+  - %LOCALAPPDATA%\StelliveBuddies 에 설치
+  - 바탕화면·시작 메뉴에 'Stellive Pet' 바로가기
+  - 원본 폴더에서 돌던 펫은 끄고, 쓰던 설정은 그대로 옮겨 와요
+  - 이제부터는 바로가기로 켜면 돼요 (원본 폴더의 RUN_STELLIVE.bat 은 테스트용)
+
+
+5. 업데이트 내보내기
+  - 원본 폴더 파일이 바뀌면(새 buddies.py, 새 캐릭터 등) PUBLISH_GITHUB.bat 을 다시 더블클릭
+  - 설치된 펫들은 켤 때 1분 뒤 + 3시간마다 확인해서, 바뀐 파일만 받고 잠깐 껐다 다시 켜져요
+  - 바로 받고 싶으면: 펫 우클릭 → 환경설정 → 업데이트 → '지금 업데이트 확인'
+
+
+주의
+  - INSTALL_STELLIVE.bat 안에는 읽기 전용 토큰이 들어 있어요. 믿을 수 있는 사람/내 컴퓨터에만 주기.
+    (토큰을 빼고 싶으면 tools\publish_local.json 을 지우고 PUBLISH 를 다시 실행 → 설치할 때 토큰을 물어봄)
+  - 토큰이 새면 GitHub → Settings → Developer settings → Fine-grained tokens 에서 바로 Revoke.
+  - 펫은 저장소를 '읽기'만 해요. 올리기는 원본 컴퓨터의 PUBLISH 로만.
