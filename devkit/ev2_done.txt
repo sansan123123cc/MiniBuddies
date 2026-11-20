@@ -46,3 +46,5 @@ marine	spring summer bday	2026-11-20
 noel	spring summer bday	2026-11-20
 pekora	spring summer bday	2026-11-20
 flare	spring summer bday	2026-11-20
+kanata	spring summer bday	2026-11-20
+watame	spring summer bday	2026-11-20
