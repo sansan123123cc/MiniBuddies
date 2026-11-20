@@ -59,3 +59,5 @@ lui	spring summer bday	2026-11-20
 koyori	spring summer bday	2026-11-20
 chloe	spring summer bday	2026-11-20
 iroha	spring summer bday	2026-11-20
+ao	spring summer bday	2026-11-20
+kanade	spring summer bday	2026-11-20
