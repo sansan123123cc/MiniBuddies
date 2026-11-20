@@ -118,3 +118,18 @@
 - ev_pack.sh 가 이제 ev_done.txt 를 zip 안에 같이 넣음(커밋 1번)
 - 큰 시트 크기 주의: 1536x1024(tq OFF 0:0/0:269 두 장), 1692x929(OFF 117/174) 같은 변형 나옴 → tq 출력 OFF 그대로 st.py에
 - 예약작업 trig_01TNVDoVYAGKGAvLQkA4GY3Q 꺼둠 (끝까지 못하면 다시 켜기)
+- 2026-11-19: 델리아 단체동작(60-67) 업로드. 봄(162)·여름(170)·생일(178) 이벤트 코드(PC buddies.py + 앱 Event.kt + export_data birthday) 커밋, android-apk 빌드 통과.
+- 2026-11-19: 봄·여름·생일 시트 b44~b65 업로드 — ev2_queue 1~44번(elysia~choco 전부, subaru는 봄·여름만). 라푼젤은 서드파티 차단 1회 후 재시도로 통과, 엘리 생일 띠 글자 → 재요청으로 제거.
+- 남은 것: subaru bday + marine noel pekora flare kanata watame towa luna lamy nene botan polka laplus lui koyori chloe iroha ao kanade ririka raden hajime mio okayu korone riona niko su chihaya vivi (30명). ChatGPT 이미지 한도 → 11/20 14:05 이후 재개. 도구: devkit/cbn.sh <id> <kind> <X> <Y> <첫 스샷번호>.
+- 11-19 ml 53 치마 들춤(프롬프트 '베일 끝 들어 올리기'를 치마로 그림) → 53머리+89몸 합성으로 교체, 원본 marian/ml53_skirt_backup.png
+- 2026-11-20: 뷰포트 1160x540 으로 바뀜 → tq 오프셋 X=614 Y=347 (cbn.sh <id> <kind> 614 347 N). busy() 는 탭마다 '[data-testid=stop-button]'만 보게 덮어씀(사이드바 '중지' 버튼 오탐). EVN 은 문자열만 반환 → evsend(EVN(...)) 로 보냄.
+- 2026-11-20: b66(subaru 생일 + marine noel) b67(pekora flare) b68(kanata watame) b69(towa luna) 업로드. 진행 중: lamy(탭1180) nene(탭914). 남은: botan polka laplus lui koyori chloe iroha ao kanade ririka raden hajime mio okayu korone riona niko su chihaya vivi
+- 2026-11-20: 공개 저장소 MiniBuddies + public.yml/public_sync.py, Claude 사용량 위젯(claude_usage.py, 앱 UsageActivity), 메뉴 정리·환경설정 5탭·분홍 테마·배너(settings_banner.png), 설치 마법사 그림(setup/wizard_*.bmp) 커밋
+- 저장 스크린샷은 scale 없이(축소하면 저장 파일도 작아짐)
+
+## 2026-11-20 오후 — 봄·여름·생일 시트 전원 완료
+- b71~b80 업로드: botan polka laplus / lui koyori / chloe iroha / ao kanade / ririka raden / hajime mio / okayu korone / riona niko / su chihaya / vivi → ev2_done 74명 전원(162~185) 끝
+- 요령: wt3(40000) (CDP 45초 제한), 'wait busy:false' 나오면 그냥 다시 호출. evsend 뒤 2.5초 기다렸다가 입력창에 글자 남아 있으면 send-button 클릭(가끔 안 보내짐)
+- 저장 스크린샷은 scale 없이 찍기(축소하면 저장 파일도 작아짐). 인덱스는 결과에 찍힌 번호로 확인(저장 안 한 스샷도 번호 먹을 때 있음)
+- buddies.py: 환경설정 '의상' 목록(캐릭터별 콤보) 제거 → 우클릭 맨 위 '○○ 옷 갈아입기/모습 바꾸기'로. 설정엔 자동 갈아입기·도로롱 모션만 남김
+- setup-exe #10(설치 마법사 그림) 성공 확인
