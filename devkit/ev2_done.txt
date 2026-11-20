@@ -48,3 +48,5 @@ pekora	spring summer bday	2026-11-20
 flare	spring summer bday	2026-11-20
 kanata	spring summer bday	2026-11-20
 watame	spring summer bday	2026-11-20
+towa	spring summer bday	2026-11-20
+luna	spring summer bday	2026-11-20
