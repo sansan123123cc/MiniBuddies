@@ -5212,6 +5212,77 @@ class Buddy(QWidget):
 SIZES = [("아주 작게", 64), ("작게", 100), ("보통", 136), ("크게", 190), ("아주 크게", 260), ("왕 크게", 340), ("거대", 480), ("초거대", 640)]
 
 
+def settings_qss():
+    """환경설정 창 분홍 테마 (체크 표시 그림은 처음 한 번 임시 폴더에 그려 둠)"""
+    import tempfile
+    tmp = tempfile.gettempdir()
+    ck = os.path.join(tmp, "minibuddies_check.png")
+    up, dn = os.path.join(tmp, "minibuddies_up.png"), os.path.join(tmp, "minibuddies_dn.png")
+    for path, pts in ((up, ((2, 10), (8, 3), (14, 10))), (dn, ((2, 3), (8, 10), (14, 3)))):
+        if not os.path.exists(path):
+            try:
+                from PyQt5.QtGui import QColor, QPolygon
+                pm = QPixmap(16, 13); pm.fill(Qt.transparent)
+                pa = QPainter(pm); pa.setRenderHint(QPainter.Antialiasing)
+                pa.setPen(Qt.NoPen); pa.setBrush(QColor("#d0588a"))
+                pa.drawPolygon(QPolygon([QPoint(x, y) for x, y in pts])); pa.end()
+                pm.save(path)
+            except Exception:
+                pass
+    if not os.path.exists(ck):
+        try:
+            from PyQt5.QtGui import QPen, QColor
+            pm = QPixmap(32, 32); pm.fill(Qt.transparent)
+            pa = QPainter(pm); pa.setRenderHint(QPainter.Antialiasing)
+            pa.setPen(QPen(QColor("white"), 5, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+            pa.drawPolyline(QPoint(7, 17), QPoint(13, 23), QPoint(25, 9)); pa.end()
+            pm.save(ck)
+        except Exception:
+            pass
+    ck, up, dn = (x.replace("\\", "/") for x in (ck, up, dn))
+    return """
+QDialog{background:#fff4f8;}
+QDialog QWidget{font-family:'Malgun Gothic','맑은 고딕',sans-serif;font-size:10pt;color:#4a3a44;}
+QTabWidget::pane{border:1px solid #f3c6d8;border-radius:12px;background:#fffafc;top:-1px;}
+QTabBar::tab{background:#fbe3ee;color:#9a4d6e;border:1px solid #f3c6d8;border-bottom:none;padding:7px 18px;margin-right:3px;
+  border-top-left-radius:10px;border-top-right-radius:10px;}
+QTabBar::tab:selected{background:#fffafc;color:#d0588a;font-weight:bold;}
+QTabBar::tab:hover:!selected{background:#f7d3e3;}
+QGroupBox{border:1px solid #f3c6d8;border-radius:12px;margin-top:16px;padding:12px 8px 8px;background:#ffffff;}
+QGroupBox QGroupBox{background:#fff8fb;}
+QGroupBox::title{subcontrol-origin:margin;left:14px;padding:0 6px;color:#d0588a;font-weight:bold;}
+QPushButton{background:#fbe3ee;color:#b0476f;border:1px solid #f3c6d8;border-radius:9px;padding:5px 14px;min-height:20px;}
+QPushButton:hover{background:#f7cfe0;}
+QPushButton:pressed{background:#f0b7cf;}
+QPushButton:default{background:#e86a9b;color:white;border-color:#e86a9b;font-weight:bold;}
+QPushButton:disabled{color:#c9a9b8;background:#f8eef3;}
+QCheckBox{spacing:8px;}
+QCheckBox::indicator{width:17px;height:17px;border:1px solid #e3a3bf;border-radius:5px;background:white;}
+QCheckBox::indicator:hover{border-color:#e86a9b;}
+QCheckBox::indicator:checked{background:#e86a9b;border-color:#e86a9b;image:url(%(ck)s);}
+QComboBox,QSpinBox,QTimeEdit,QLineEdit{background:white;border:1px solid #f0c3d6;border-radius:8px;padding:3px 8px;min-height:22px;}
+QComboBox:focus,QSpinBox:focus,QLineEdit:focus,QTimeEdit:focus{border-color:#e86a9b;}
+QComboBox::drop-down{border:none;width:22px;}
+QComboBox::down-arrow{image:url(%(dn)s);width:12px;height:9px;margin-right:8px;}
+QAbstractSpinBox::up-button,QAbstractSpinBox::down-button{width:16px;border:none;background:transparent;}
+QAbstractSpinBox::up-arrow{image:url(%(up)s);width:10px;height:7px;}
+QAbstractSpinBox::down-arrow{image:url(%(dn)s);width:10px;height:7px;}
+QComboBox QAbstractItemView{background:white;border:1px solid #f0c3d6;selection-background-color:#fbe3ee;selection-color:#b0476f;}
+QSlider::groove:horizontal{height:6px;background:#f3d9e5;border-radius:3px;}
+QSlider::sub-page:horizontal{background:#e86a9b;border-radius:3px;}
+QSlider::handle:horizontal{background:white;border:2px solid #e86a9b;width:14px;margin:-6px 0;border-radius:9px;}
+QScrollArea{background:transparent;border:none;}
+QScrollArea > QWidget > QWidget{background:transparent;}
+QScrollBar:vertical{background:transparent;width:10px;margin:2px;}
+QScrollBar::handle:vertical{background:#f0c3d6;border-radius:4px;min-height:30px;}
+QScrollBar:horizontal{background:transparent;height:10px;margin:2px;}
+QScrollBar::handle:horizontal{background:#f0c3d6;border-radius:4px;min-width:30px;}
+QScrollBar::add-line,QScrollBar::sub-line{height:0;width:0;}
+QListWidget,QTableWidget,QTextBrowser{background:white;border:1px solid #f0c3d6;border-radius:8px;}
+QHeaderView::section{background:#fbe3ee;color:#9a4d6e;border:none;padding:4px;}
+""" % {"ck": ck, "up": up, "dn": dn}
+
+
 class SettingsDialog(QDialog):
     """환경설정 창 — 고른 값은 [확인]/[적용]을 눌러야 반영되고 settings.json 에 저장됨"""
     def __init__(self, app):
@@ -5220,7 +5291,7 @@ class SettingsDialog(QDialog):
         self.setWindowTitle(f"환경설정 — {APP_NAME}")
         self.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint | Qt.WindowMinimizeButtonHint)   # 항상 위 X (보고 있을 때만 펫보다 위)
         self.setMinimumWidth(640)
-        self.setStyleSheet("QDialog{background:#fff7fb;} QPushButton{padding:4px 14px;}")
+        self.setStyleSheet(settings_qss())
         tabs = QTabWidget()
         self.picks = {}
         self.group_btns = []
@@ -5263,7 +5334,15 @@ class SettingsDialog(QDialog):
         bot = QHBoxLayout(); bot.addStretch(1)
         for bt in (ok, cancel, apply_):
             bot.addWidget(bt)
-        lay = QVBoxLayout(self); lay.addWidget(tabs); lay.addLayout(bot)
+        lay = QVBoxLayout(self)
+        _bn = os.path.join(BASE, "settings_banner.png")      # 위쪽 분홍 배너 (그림 파일이 있을 때만)
+        if os.path.exists(_bn):
+            self.banner = QLabel(); self.banner.setMinimumHeight(10)
+            self.banner_pix = QPixmap(_bn)
+            self.banner.setAlignment(Qt.AlignCenter)
+            self.banner.setStyleSheet("border-radius:10px;")
+            lay.addWidget(self.banner)
+        lay.addWidget(tabs); lay.addLayout(bot)
         self.adjustSize()
         cur = target_screen().availableGeometry()
         # 모니터 해상도·배율에 맞춰 창 크기를 화면 안으로 제한 (넘치는 부분은 스크롤)
@@ -5619,6 +5698,31 @@ class SettingsDialog(QDialog):
                 v.addWidget(wid)
         v.addStretch(1)
         return w
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        bn = getattr(self, "banner", None)
+        if bn is None or self.banner_pix.isNull():
+            return
+        w = max(200, self.width() - 24)
+        h = max(70, min(130, w // 5))
+        src = self.banner_pix
+        pic = src.scaledToHeight(h, Qt.SmoothTransformation)
+        canvas = QPixmap(w, h)
+        pa = QPainter(canvas)
+        col = src.copy(int(src.width() * 0.3), 0, 1, src.height())       # 빈 하늘 한 줄을 늘려서 왼쪽을 채움
+        pa.drawPixmap(0, 0, w, h, col)
+        from PyQt5.QtGui import QLinearGradient, QColor
+        fade = QPixmap(pic.size()); fade.fill(Qt.transparent)              # 그림 왼쪽 끝을 부드럽게 흐려서 이음매 없애기
+        p2 = QPainter(fade); p2.drawPixmap(0, 0, pic)
+        p2.setCompositionMode(QPainter.CompositionMode_DestinationIn)
+        g = QLinearGradient(0, 0, pic.width() * 0.4, 0)
+        g.setColorAt(0, QColor(0, 0, 0, 0)); g.setColorAt(1, QColor(0, 0, 0, 255))
+        p2.fillRect(fade.rect(), g); p2.end()
+        pa.drawPixmap(w - pic.width(), 0, fade)                           # 그림은 오른쪽에 맞춤
+        pa.end()
+        bn.setPixmap(canvas)
+        bn.setFixedHeight(h)
 
     def tab_more(self):
         """예전 우클릭에 있던 켜고 끄기 + 자동 실행 + 자리 비움 마중"""
