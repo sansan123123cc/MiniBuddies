@@ -65,3 +65,5 @@ ririka	spring summer bday	2026-11-20
 raden	spring summer bday	2026-11-20
 hajime	spring summer bday	2026-11-20
 mio	spring summer bday	2026-11-20
+okayu	spring summer bday	2026-11-20
+korone	spring summer bday	2026-11-20
