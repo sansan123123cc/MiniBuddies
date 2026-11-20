@@ -44,3 +44,5 @@ choco	spring summer bday	2026-11-19
 subaru	spring summer bday	2026-11-20
 marine	spring summer bday	2026-11-20
 noel	spring summer bday	2026-11-20
+pekora	spring summer bday	2026-11-20
+flare	spring summer bday	2026-11-20
