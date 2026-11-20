@@ -1,6 +1,6 @@
 {
-"build": 29919275,
-"version": "26.11.20.1535",
+"build": 29919285,
+"version": "26.11.20.1545",
 "repo": "sansan123123cc/MiniBuddies",
 "branch": "main",
 "files": {
@@ -14857,6 +14857,7 @@
 "icon.ico": "37d5878bed5748375276c9e318e228bf997620084fec6f10303f57da3a6ef82a",
 "marian/progress.md": "3ba41cd61b2c42b141ca787bef92c29924d6b03bcc5a468913db1eb3c2d7e625",
 "pet_mcp.py": "d7e3ccca6dda4857f50e453b2add63906513b46a4ce4b7d6592dd73fbcd329bb",
-"roster.txt": "04340448e751a8ef1b72119135a626984b7122bd5966f1c1070ea130bf9be788"
+"roster.txt": "04340448e751a8ef1b72119135a626984b7122bd5966f1c1070ea130bf9be788",
+"settings_banner.png": "48c4bf900db0cfa89c0128b7351861bb16f821e6cdb10af1259aa2a01e0109c8"
 }
 }
