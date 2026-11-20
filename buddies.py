@@ -5526,13 +5526,9 @@ class SettingsDialog(QDialog):
     # 의상: 캐릭터별 옷 고르기 + 알아서 갈아입기
     def tab_outfit(self):
         w = QWidget(); f = QFormLayout(w)
-        for base, ofs in self.app.outfits.items():
-            cb = QComboBox()
-            for of in ofs:
-                cb.addItem(OUTFIT_NAME.get(of, of), of)
-            cb.setCurrentIndex(max(0, cb.findData(self.app.outfit.get(base))))
-            self.outfit_box[base] = cb
-            f.addRow(f"{self.app.chars[base]['label']} 의상", cb)
+        # 캐릭터별 옷 고르기는 우클릭 메뉴 '옷 갈아입기'로 (여기엔 켜고 끄는 것만)
+        on = QLabel("옷은 캐릭터를 우클릭 → '옷 갈아입기'에서 골라요."); on.setWordWrap(True); on.setStyleSheet("color:#9a8592;")
+        f.addRow("", on)
         self.oauto = QCheckBox("가끔(12~25분마다) 알아서 옷 갈아입기")
         self.oauto.setChecked(self.app.cfg.get("outfit_auto", True))
         f.addRow("", self.oauto)
@@ -6125,7 +6121,7 @@ class SettingsDialog(QDialog):
         # 의상
         for base, cb in self.outfit_box.items():
             app.set_outfit(base, cb.currentData())
-        if self.outfit_box:
+        if getattr(self, "oauto", None) is not None:
             cfg["outfit_auto"] = self.oauto.isChecked()
         if getattr(self, "doro_mo", None) is not None and self.doro_mo.isChecked() != bool(cfg.get("doro_motion", False)):
             cfg["doro_motion"] = self.doro_mo.isChecked()
@@ -9876,7 +9872,13 @@ class App:
         top.addSection(lab)
         ah = top.addAction(self.aff_text(who.char)); ah.setEnabled(False)
         top.addAction(f"{lab}에게 물어보기…", lambda: self.ask_claude(who))
-        wm = QMenu(f"{lab}이랑 놀기 · 옷")          # 이 아이 전용 동작·옷·이벤트는 한 칸 안으로
+        ofs = self.outfits.get(who.char, {})
+        if len(ofs) > 1:                             # 옷 갈아입기는 우클릭 바로 아래 (한 번에 고르게)
+            om = top.addMenu(f"{lab} 모습 바꾸기" if who.char in TRANSFORM else f"{lab} 옷 갈아입기")
+            for of in ofs:
+                a = om.addAction(OUTFIT_NAME.get(of, of), lambda of=of: self.set_outfit(who.char, of))
+                a.setCheckable(True); a.setChecked(self.outfit.get(who.char) == of)
+        wm = QMenu(f"{lab}이랑 놀기")              # 이 아이 전용 동작·이벤트는 한 칸 안으로
         lst = self.chars[who.char].get("persona") or []
         if lst:
             pm = wm.addMenu("개성 동작")
@@ -9890,12 +9892,6 @@ class App:
             alt_on = self.outfit.get(who.char) == TRANSFORM[who.char]["alt"]
             wm.addAction("변신 풀기" if alt_on else f"변신! ({OUTFIT_NAME.get(TRANSFORM[who.char]['alt'])})",
                           lambda: self.transform(who.char))
-        ofs = self.outfits.get(who.char, {})
-        if len(ofs) > 1:
-            om = wm.addMenu("모습 바꾸기" if who.char in TRANSFORM else "옷 갈아입기")
-            for of in ofs:
-                a = om.addAction(OUTFIT_NAME.get(of, of), lambda of=of: self.set_outfit(who.char, of))
-                a.setCheckable(True); a.setChecked(self.outfit.get(who.char) == of)
         _osong_menu(self, wm, who)  # 변신 노래 켜고 끄기
         _ev_menu(self, wm, who)  # 계절 이벤트 코스튬
         _dm = DMODE.get(f"{who.char}@{self.outfit.get(who.char)}")  # 도로시 모드 변신 (피나 전개 / 일반 모드)
