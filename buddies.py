@@ -6410,24 +6410,47 @@ def upd_apply(remote, progress=None):
             continue
         if upd_sha(upd_path(rel)) != sha:
             need.append(rel)
-    stage = upd_path("_update_tmp")
-    shutil.rmtree(stage, ignore_errors=True)
+    stage = upd_path("_update_tmp")          # 지난번에 받다 만 파일은 그대로 두고 이어 받기 (처음부터 다시 받으면 GitHub 요청 한도에 걸림)
     done = [0]
+    import threading as _th, urllib.error as _ue
+    stop = _th.Event()
 
     def fetch(rel):
-        data = None
-        for _ in range(3):
+        out = os.path.join(stage, rel)
+        if upd_sha(out) == files[rel]:                 # 이미 받아 둔 파일
+            done[0] += 1
+            if progress:
+                progress(done[0], len(need))
+            return
+        if stop.is_set():
+            raise RuntimeError("중단")
+        data, why = None, ""
+        for wait in (0, 2, 5, 12, 25):
+            if wait:
+                time.sleep(wait)
             try:
                 data = upd_get(remote["repo"], rel, token, remote.get("branch", "main"), timeout=60)
                 break
-            except Exception:
-                data = None
+            except _ue.HTTPError as e:
+                why = "HTTP %s" % e.code
+                left = e.headers.get("x-ratelimit-remaining") if e.headers else None
+                if e.code in (403, 429) and (left == "0" or e.headers.get("retry-after")):
+                    try:
+                        mins = max(1, int((int(e.headers.get("x-ratelimit-reset") or 0) - time.time()) / 60) + 1)
+                    except Exception:
+                        mins = 60
+                    stop.set()
+                    raise RuntimeError("GitHub 요청 한도에 걸렸어요 — 약 %d분 뒤 다시 하면 받던 데서 이어 받아요" % mins)
+                if e.code in (401, 404):
+                    break
+            except Exception as e:
+                why = type(e).__name__
+            data = None
         if data is None:
-            raise RuntimeError("받기 실패: " + rel)
+            raise RuntimeError("받기 실패 (%s): %s" % (why or "?", rel))
         import hashlib
         if hashlib.sha256(data).hexdigest() != files[rel]:
             raise RuntimeError("파일이 손상됨: " + rel)
-        out = os.path.join(stage, rel)
         os.makedirs(os.path.dirname(out), exist_ok=True)
         with open(out, "wb") as f:
             f.write(data)
@@ -6435,7 +6458,7 @@ def upd_apply(remote, progress=None):
         if progress:
             progress(done[0], len(need))
 
-    with ThreadPoolExecutor(6) as ex:
+    with ThreadPoolExecutor(4) as ex:
         list(ex.map(fetch, need))
     for rel in need:                                   # 다 받았으면 한꺼번에 교체
         dst = upd_path(rel)
@@ -6685,8 +6708,8 @@ class App:
         self.idlt = QTimer(timeout=self.idle_tick); self.idlt.start(1000)
         self.curt = QTimer(timeout=self.cursor_tick); self.curt.start(250)     # 커서 놀이 + 호감도 저장
         self.mint = QTimer(timeout=self.minute_tick); self.mint.start(30000)   # 기념일·예약 알림·컴퓨터 상태
-        QTimer.singleShot(9000, lambda: self.cfg.get("usage_widget") and self.open_usage(auto=True))
-        QTimer.singleShot(12000, lambda: self.cfg.get("pole_corner") and self.pole_corner_set(True))   # 구석 폴댄스 켜 두었으면 이어서   # 켜 두었던 사용량 위젯 다시 띄우기
+        QTimer.singleShot(9000, lambda: self.cfg.get("usage_widget") and self.open_usage(auto=True))   # 켜 두었던 사용량 위젯 다시 띄우기
+        QTimer.singleShot(12000, lambda: self.cfg.get("pole_corner") and self.pole_corner_set(True))   # 구석 폴댄스 켜 두었으면 이어서
         QTimer.singleShot(15000, self.minute_tick)
         QTimer.singleShot(5000, self.rename_shortcuts)   # 다른 '맨 위' 창에 밀려도 다시 위로
         self.r = QTimer(timeout=self.surprise); self.r.start(40000)
