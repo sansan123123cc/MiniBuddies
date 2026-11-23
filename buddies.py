@@ -6387,6 +6387,13 @@ def upd_check():
     try:
         remote = json.loads(upd_get(repo, "manifest.json", cfg.get("token"), branch).decode("utf-8"))
     except urllib.error.HTTPError as e:
+        h = e.headers or {}
+        if e.code in (403, 429) and (h.get("x-ratelimit-remaining") == "0" or h.get("retry-after")):
+            try:
+                mins = max(1, int((int(h.get("x-ratelimit-reset") or 0) - time.time()) / 60) + 1)
+            except Exception:
+                mins = 60
+            return None, "GitHub 요청 한도에 걸렸어요 — 약 %d분 뒤에 다시 해 주세요 (토큰 문제 아님)" % mins
         if e.code in (401, 403):
             return None, "토큰이 틀렸거나 만료됐어요 (환경설정 → 업데이트에서 새 토큰 넣기)"
         if e.code == 404:
