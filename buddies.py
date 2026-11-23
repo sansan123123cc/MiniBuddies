@@ -6685,7 +6685,8 @@ class App:
         self.idlt = QTimer(timeout=self.idle_tick); self.idlt.start(1000)
         self.curt = QTimer(timeout=self.cursor_tick); self.curt.start(250)     # 커서 놀이 + 호감도 저장
         self.mint = QTimer(timeout=self.minute_tick); self.mint.start(30000)   # 기념일·예약 알림·컴퓨터 상태
-        QTimer.singleShot(9000, lambda: self.cfg.get("usage_widget") and self.open_usage(auto=True))   # 켜 두었던 사용량 위젯 다시 띄우기
+        QTimer.singleShot(9000, lambda: self.cfg.get("usage_widget") and self.open_usage(auto=True))
+        QTimer.singleShot(12000, lambda: self.cfg.get("pole_corner") and self.pole_corner_set(True))   # 구석 폴댄스 켜 두었으면 이어서   # 켜 두었던 사용량 위젯 다시 띄우기
         QTimer.singleShot(15000, self.minute_tick)
         QTimer.singleShot(5000, self.rename_shortcuts)   # 다른 '맨 위' 창에 밀려도 다시 위로
         self.r = QTimer(timeout=self.surprise); self.r.start(40000)
@@ -7987,6 +7988,88 @@ class App:
             return None
         return bl, nr
 
+    # ── 블랑 × 누아르: 화면 오른쪽 아래 구석에서 계속 폴댄스 (메뉴로 켜고 끔, 켜 두면 다음에도 기억) ──
+    POLE_CORNER_LINES = (
+        ("행운의 쇼는 쉬지 않아요~♪", "점장님, 일하다 지치면 여기 봐 주세요!", "한 바퀴 더~! 빙글빙글!",
+         "구석 자리도 무대라구요♪", "언니, 박자 맞춰요~!", "코인 러시 출장 공연 중이에요~"),
+        ("으⋯ 구석이라 다행이에요⋯", "저, 점장님⋯ 일 안 하시고 왜 여기 보세요⋯!", "블랑, 조금만 천천히⋯!",
+         "⋯조금은 익숙해진 것 같아요.", "부끄럽지만⋯ 계속할게요.", "점장님은⋯ 일, 일 하세요⋯!"),
+    )
+    POLE_SPIN = [(187, 22), (188, 22), (189, 26), (190, 30), (191, 26)]
+
+    def pole_corner_set(self, on):
+        self.cfg["pole_corner"] = bool(on)
+        self.save_cfg()
+        if not hasattr(self, "_pct"):
+            self._pct = QTimer(timeout=self.pole_corner_step)
+        self._pcn = 0
+        bl = next((b for b in self.buddies if b.char == "blanc"), None)
+        nr = next((b for b in self.buddies if b.char == "noir"), None)
+        if on:
+            self._pct.start(250)
+            if bl: bl.say("점장님, 구석에서 계속 쇼 할게요~!", 100)
+            if nr: QTimer.singleShot(int(40 * TICK), lambda: nr in self.buddies and nr.say("으⋯ 구석이라면⋯ 조금 덜 부끄러울지도⋯", 100))
+        else:
+            self._pct.stop()
+            for b in self.buddies:
+                if getattr(b, "_pole_corner", False):
+                    b._pole_corner = False
+                    if b.state == "seq":
+                        b.set("cheer", 60)
+            if bl: bl.say("쇼 끝! 박수~!", 80)
+
+    def _pole_corner_loop(self, b):
+        if self.cfg.get("pole_corner") and b in self.buddies and b.drag is None:
+            b.play_seq(self.POLE_SPIN * 8, after=lambda b=b: self._pole_corner_loop(b))   # 쉬지 않고 계속 돌기
+        else:
+            b._pole_corner = False
+
+    def pole_corner_step(self):
+        if not self.cfg.get("pole_corner"):
+            self._pct.stop()
+            return
+        self._pcn += 1
+        dancing = []
+        for c, k in (("blanc", 1.35), ("noir", 0.55)):       # 블랑 왼쪽·누아르 오른쪽, 서로 마주 보고
+            b = next((x for x in self.buddies if x.char == c), None)
+            if b is None or b.drag is not None:
+                continue
+            bd = _ev_bdir(self, c)
+            if not bd or not os.path.exists(os.path.join(bd, "191.png")):
+                continue
+            if b.state == "seq":
+                if getattr(b, "_pole_corner", False):
+                    dancing.append(b)
+                continue                                       # 다른 동작(사격 등) 중이면 끝날 때까지 기다림
+            b._pole_corner = False
+            if b.state in self.BUSY or b.surface is None:
+                continue
+            scr = b.scr()
+            tx = scr.right() - b.S * k
+            on_floor = b.surface[2] - b.surface[0] > 5000 and abs(b.surface[1] - scr.bottom()) <= 4
+            if not on_floor:                                   # 창 위나 다른 화면이면 구석 바닥에서 빼꼼 다시 등장
+                if self._pcn % 8 == 0:
+                    self.remove(b)
+                    self.add(int(tx), "peek", c)
+                continue
+            dx = tx - b.cx
+            if abs(dx) > b.S * 0.2:
+                d = 1 if dx > 0 else -1
+                b.goal = None
+                if b.state != "walk" or b.vx * d <= 0:
+                    b.vx = d * 1.3
+                    b.face = d
+                    b.set("walk", 600)
+                continue
+            b.vx = 0
+            b.goal = None
+            b.face = 1 if c == "blanc" else -1
+            b._pole_corner = True
+            b.play_seq([(186, 50)] + self.POLE_SPIN * 8, after=lambda b=b: self._pole_corner_loop(b))
+        if dancing and self._pcn % 200 == 0:                  # 50초쯤마다 한마디
+            b = random.choice(dancing)
+            b.say(random.choice(self.POLE_CORNER_LINES[0 if b.char == "blanc" else 1]), 110)
+
     def pole_show(self):
         pair = self.pole_pair()
         if not pair or getattr(self, "_pole_busy", False):
@@ -8492,7 +8575,7 @@ class App:
         if random.random() < 0.06 and self.apple_pair():
             self.apple_cut()
         # 2.8) 블랑·누아르가 둘 다 있으면 가끔 쌍둥이 폴댄스 쇼
-        elif random.random() < 0.05 and self.pole_pair():
+        elif random.random() < 0.05 and not self.cfg.get("pole_corner") and self.pole_pair():
             self.pole_show()
         # 3) 캐릭터끼리 수다 (켜 둔 경우만)
         if self.ai_chat_ready() and random.random() < 0.35:
@@ -10056,6 +10139,9 @@ class App:
             wm.addAction("홍북이의 사과 베기 (도로롱)", self.apple_cut)
         if who.char in ("blanc", "noir") and self.pole_pair():
             wm.addAction("블랑·누아르 폴댄스 쇼", self.pole_show)
+        if who.char in ("blanc", "noir"):
+            pc = wm.addAction("구석에서 계속 폴댄스", lambda: self.pole_corner_set(not self.cfg.get("pole_corner")))
+            pc.setCheckable(True); pc.setChecked(bool(self.cfg.get("pole_corner")))
         if who.char in TRANSFORM and TRANSFORM[who.char]["alt"] in self.outfits.get(who.char, {}):
             alt_on = self.outfit.get(who.char) == TRANSFORM[who.char]["alt"]
             wm.addAction("변신 풀기" if alt_on else f"변신! ({OUTFIT_NAME.get(TRANSFORM[who.char]['alt'])})",
