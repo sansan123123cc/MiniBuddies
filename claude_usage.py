@@ -14,6 +14,7 @@ USAGE_URL = "https://claude.ai/settings/usage"
 DATA = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "DesktopPet", "claude_usage")
 OUT = os.path.join(DATA, "usage.json")
 WIN = os.path.join(DATA, "window.json")
+SHOW = os.path.join(DATA, "show.json")           # 보일 것 고르기 {claude, nai}
 NAI_TOKEN = os.path.join(DATA, "nai_token.txt")   # NovelAI '영구 API 토큰'(pst-…) — 이 PC 에만 저장
 NAI_API = ("https://image.novelai.net/user/subscription", "https://api.novelai.net/user/subscription")
 EVERY = 300                      # 몇 초마다 새로 읽을지
@@ -139,49 +140,72 @@ def load_json(path):
 
 
 UI_HTML = """<!doctype html><html><head><meta charset="utf-8"><style>
-:root{--bg:rgba(255,247,250,.97);--fg:#4a3a44;--sub:#9a8592;--bar:#eadde4;--ok:#5b8def;--warn:#f0a030;--hot:#e5484d}
-*{box-sizing:border-box}html,body{margin:0;height:100%;overflow:hidden;background:#FFF7FA;font:13px 'Malgun Gothic',sans-serif;color:var(--fg)}
-#p{margin:0;height:100%;background:var(--bg);border:1px solid #f3c6d8;border-radius:12px;padding:10px 12px 8px;display:flex;flex-direction:column;gap:7px}
-#h{display:flex;align-items:center;gap:6px;font-weight:700;color:#d0588a}
+:root{--bg:rgba(255,247,250,.97);--fg:#4a3a44;--sub:#9a8592;--bar:#eadde4;--ok:#5b8def;--warn:#f0a030;--hot:#e5484d;--pk:#d0588a;--ln:#f3c6d8}
+*{box-sizing:border-box}[hidden]{display:none!important}html,body{margin:0;overflow:hidden;background:#FFF7FA;font:13px 'Malgun Gothic',sans-serif;color:var(--fg)}
+#p{margin:0;background:var(--bg);border:1px solid var(--ln);border-radius:12px;padding:8px 12px 8px;display:flex;flex-direction:column;gap:8px}
+#h{display:flex;align-items:center;gap:5px;color:var(--sub);font-size:11px}
 #h span{flex:1}
-button{border:0;background:#fbe3ee;color:#b0476f;border-radius:7px;padding:2px 7px;font:12px 'Malgun Gothic',sans-serif;cursor:pointer}
+button{white-space:nowrap;flex:none;border:0;background:#fbe3ee;color:#b0476f;border-radius:7px;padding:2px 7px;font:12px 'Malgun Gothic',sans-serif;cursor:pointer}
 button:hover{background:#f7cfe0}
+.sec{display:flex;flex-direction:column;gap:7px}
+.col{display:flex;flex-direction:column;gap:7px}
+.sec+.sec{border-top:1px dashed var(--ln);padding-top:8px}
+.st{display:flex;align-items:center;gap:6px;font-weight:700;color:var(--pk);font-size:13px}.st span{flex:1}
 .r{display:flex;flex-direction:column;gap:2px}
 .t{display:flex;justify-content:space-between;gap:8px}.t b{font-weight:600}
 .k{height:7px;border-radius:4px;background:var(--bar);overflow:hidden}.k i{display:block;height:100%;border-radius:4px;background:var(--ok)}
 .s{color:var(--sub);font-size:11px}
-#f{color:var(--sub);font-size:11px;margin-top:auto}
-#nai{display:flex;flex-direction:column;gap:2px;border-top:1px dashed #f3c6d8;padding-top:6px}#nai:empty{display:none}
+#set{display:flex;flex-direction:column;gap:4px;background:#fff;border:1px solid var(--ln);border-radius:8px;padding:6px 8px}
+#set label{display:flex;align-items:center;gap:6px;cursor:pointer}
+#set input{accent-color:var(--pk);margin:0}
+#f{color:var(--sub);font-size:11px}
+#nt{flex:1;min-width:0;border:1px solid var(--ln);border-radius:6px;padding:2px 5px;font:12px 'Malgun Gothic',sans-serif}
 </style></head><body><div id="p" class="pywebview-drag-region">
-<div id="h"><span class="pywebview-drag-region">Claude 사용량</span><button onclick="pywebview.api.refresh()" title="지금 새로 읽기">↻</button><button id="lb" onclick="pywebview.api.login()" title="로그인 창 열기/닫기" hidden>로그인</button><button onclick="pywebview.api.close()" title="닫기">×</button></div>
-<div id="rows"><div class="s">불러오는 중…</div></div>
-<div id="nai"></div>
+<div id="h"><span class="pywebview-drag-region">사용량</span><button onclick="pywebview.api.refresh()" title="지금 새로 읽기">↻</button><button id="gb" onclick="togSet()" title="보일 것 고르기">⚙</button><button onclick="pywebview.api.close()" title="닫기">×</button></div>
+<div id="set" hidden><div class="s">보일 것 고르기</div>
+<label><input type="checkbox" id="oc" onchange="setShow('claude',this.checked)">Claude 사용량</label>
+<label><input type="checkbox" id="on" onchange="setShow('nai',this.checked)">NovelAI 사용량</label></div>
+<div class="sec" id="sc"><div class="st"><span>Claude 사용량</span><button id="lb" onclick="pywebview.api.login()" title="로그인 창 열기/닫기" hidden>로그인</button></div>
+<div id="rows" class="col"><div class="s">불러오는 중…</div></div></div>
+<div class="sec" id="sn"><div class="st"><span>NovelAI 사용량</span><span id="nb" style="flex:none;display:flex;gap:4px"></span></div><div id="nai" class="col"></div></div>
 <div id="f"></div></div>
 <script>
+var D={},SH={claude:true,nai:true};
 function esc(s){return String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function bar(label,val,pct,c,sub){return '<div class="r"><div class="t"><b>'+esc(label)+'</b><span>'+val+'</span></div><div class="k"><i style="width:'+pct+'%;background:'+c+'"></i></div>'+(sub?'<div class="s">'+esc(sub)+'</div>':'')+'</div>'}
+function fit(){setTimeout(function(){try{pywebview.api.fit(Math.ceil(document.getElementById('p').getBoundingClientRect().height)+2)}catch(e){}},30)}
+function togSet(){var e=document.getElementById('set');e.hidden=!e.hidden;fit()}
+function setShow(k,on){SH[k]=on;if(!SH.claude&&!SH.nai){SH[k==='claude'?'nai':'claude']=true}pywebview.api.set_show(SH.claude,SH.nai);paint()}
 function renderNai(n){
-  var el=document.getElementById('nai');
-  if(!n){el.innerHTML='';return}
+  var el=document.getElementById('nai'),nb=document.getElementById('nb');
   var a=document.activeElement;if(a&&a.id==='nt'&&a.value)return;
-  var btn='<button onclick="pywebview.api.nai_login()">'+(n.shown?'NAI 창 닫기':'NAI 로그인')+'</button>';
-  if(n.need_login||n.pct==null){el.innerHTML='<div class="t"><b>NovelAI</b>'+btn+'</div><div class="s">'+esc(n.status||'API 토큰을 넣으면 V5 남은 양·Anlas 가 보여요')+'</div>'
-    +'<div class="t" style="gap:4px"><input id="nt" type="password" placeholder="pst-… 토큰 붙여넣기" style="flex:1;min-width:0;border:1px solid #f3c6d8;border-radius:6px;padding:2px 5px;font:12px Malgun Gothic,sans-serif"><button onclick="saveTok()">저장</button></div>';return}
+  n=n||{need_login:true};
+  var lg='<button onclick="pywebview.api.nai_login()" title="이메일 계정 로그인 창 열기/닫기">'+(n.shown?'로그인 창 닫기':'로그인')+'</button>';
+  if(n.need_login||n.pct==null){
+    nb.innerHTML=lg;
+    el.innerHTML='<div class="s">'+esc(n.status||'API 토큰을 넣으면 V5 남은 양·Anlas 가 보여요')+'</div>'
+      +'<div class="t" style="gap:4px"><input id="nt" type="password" placeholder="pst-… 토큰 붙여넣기"><button onclick="saveTok()">저장</button></div>';return}
+  nb.innerHTML=n.tok?'<button onclick="clearTok()" title="저장한 토큰 지우기">토큰 지우기</button>':(n.shown?lg:'');
   var p=n.pct,c=p<=5?'var(--hot)':p<=20?'var(--warn)':'var(--ok)';
-  el.innerHTML='<div class="r"><div class="t"><b>NovelAI V5 남은 양</b><span>'+p+'%'+(n.imgs!=null?' · 약 '+Number(n.imgs).toLocaleString()+'장':'')+'</span></div><div class="k"><i style="width:'+p+'%;background:'+c+'"></i></div>'
-    +(n.next?'<div class="s">'+esc(n.next)+'</div>':'')+'</div><div class="t" style="margin-top:4px"><b>Anlas</b><span>'+Number(n.anlas||0).toLocaleString()+'</span></div>'
-    +(n.shown?'<div class="s">'+btn+'</div>':'')+(n.tok?'<div class="s"><button onclick="clearTok()" title="저장한 토큰 지우기">토큰 지우기</button></div>':'');
+  el.innerHTML=bar('V5 남은 양',p+'%'+(n.imgs!=null?' · 약 '+Number(n.imgs).toLocaleString()+'장':''),p,c,n.next)
+    +'<div class="t"><b>Anlas</b><span>'+Number(n.anlas||0).toLocaleString()+'</span></div>';
 }
 function clearTok(){pywebview.api.nai_token('')}
 function saveTok(){var i=document.getElementById('nt');var v=(i&&i.value||'').trim();if(!v)return;i.value='';pywebview.api.nai_token(v)}
-function render(d){
-  var rows=d.rows||[],h='';
-  rows.forEach(function(r){var c=r.pct>=95?'var(--hot)':r.pct>=80?'var(--warn)':'var(--ok)';
-    h+='<div class="r"><div class="t"><b>'+esc(r.label)+'</b><span>'+r.pct+'%</span></div><div class="k"><i style="width:'+r.pct+'%;background:'+c+'"></i></div>'+(r.reset?'<div class="s">'+esc(r.reset)+'</div>':'')+'</div>'});
+function paint(){
+  var d=D,rows=d.rows||[],h='';
+  if(d.show){SH.claude=d.show.claude!==false;SH.nai=d.show.nai!==false}
+  document.getElementById('oc').checked=SH.claude;document.getElementById('on').checked=SH.nai;
+  document.getElementById('sc').hidden=!SH.claude;document.getElementById('sn').hidden=!SH.nai;
+  rows.forEach(function(r){h+=bar(r.label,r.pct+'%',r.pct,r.pct>=95?'var(--hot)':r.pct>=80?'var(--warn)':'var(--ok)',r.reset)});
   document.getElementById('rows').innerHTML=h||'<div class="s">'+esc(d.status||'아직 숫자가 없어요')+'</div>';
   renderNai(d.nai);
   var lb=document.getElementById('lb');lb.hidden=!(d.need_login||!rows.length||d.cw);lb.textContent=d.cw?'로그인 창 닫기':'로그인';
-  document.getElementById('f').textContent=(rows.length&&d.status?d.status+' · ':'')+(d.time?'갱신 '+d.time:'');
+  var tm=SH.claude?d.time:(d.nai&&d.nai.time);
+  document.getElementById('f').textContent=(SH.claude&&rows.length&&d.status?d.status+' · ':'')+(tm?'갱신 '+tm:'');
+  fit();
 }
+function render(d){D=d;if(d.show){SH.claude=d.show.claude!==false;SH.nai=d.show.nai!==false}paint()}
 </script></body></html>"""
 
 
@@ -194,6 +218,8 @@ class Widget:
         self.nw = None                # novelai.net 을 여는 브라우저 창 (평소엔 숨김)
         self.nw_shown = False
         self.data = load_json(OUT) or {"rows": [], "status": "", "time": ""}
+        sh = load_json(SHOW) or {}
+        self.show = {"claude": sh.get("claude", True) is not False, "nai": sh.get("nai", True) is not False}
         self.kick = threading.Event()
         self.alive = True
 
@@ -202,7 +228,7 @@ class Widget:
         pos = load_json(WIN)
         n = max(2, len(self.data.get("rows") or []))
         self.data.setdefault("nai", {"need_login": True})
-        self.ui = self.wv.create_window("Claude 사용량", html=UI_HTML, js_api=Api(self), width=270, height=self.height(),
+        self.ui = self.wv.create_window("사용량", html=UI_HTML, js_api=Api(self), width=270, height=self.height(),
                                         x=pos.get("x"), y=pos.get("y"), frameless=True, easy_drag=False,
                                         on_top=True, resizable=False, background_color="#FFF7FA")
         self.ui.events.loaded += lambda: self.push()
@@ -333,8 +359,7 @@ class Widget:
                 nai = self.data.get("nai")
                 if nai is not None:
                     nai = dict(nai, shown=self.nw_shown, tok=bool(nai_token()))
-                self.ui.evaluate_js("render(%s)" % json.dumps(dict(self.data, cw=self.cw_shown, nai=nai), ensure_ascii=False))
-                self.ui.resize(270, self.height())
+                self.ui.evaluate_js("render(%s)" % json.dumps(dict(self.data, cw=self.cw_shown, nai=nai, show=self.show), ensure_ascii=False))
         except Exception:
             pass
 
@@ -417,8 +442,10 @@ class Widget:
             if time.time() - last >= EVERY or self.kick.is_set():
                 self.kick.clear()
                 last = time.time()
-                self.read_once()
-                self.read_nai()
+                if self.show["claude"]:
+                    self.read_once()
+                if self.show["nai"]:
+                    self.read_nai()
                 continue
             self.kick.wait(5)
 
@@ -443,6 +470,27 @@ class Api:
     def nai_login(self):
         self._w.show_nw(not self._w.nw_shown)
         self._w.kick.set()
+
+    def fit(self, h):
+        """화면 내용 높이에 맞춰 창 크기 조절 (켠 항목·줄 수에 따라 달라짐)"""
+        try:
+            h = max(60, min(900, int(h)))
+            if getattr(self._w, "_h", None) != h:
+                self._w._h = h
+                self._w.ui.resize(270, h)
+        except Exception:
+            pass
+
+    def set_show(self, claude, nai):
+        w = self._w
+        w.show = {"claude": bool(claude) or not nai, "nai": bool(nai)}
+        save_json(SHOW, w.show)
+        if not w.show["claude"] and w.cw_shown:
+            w.show_cw(False)
+        if not w.show["nai"] and w.nw_shown:
+            w.show_nw(False)
+        w.push()
+        w.kick.set()                                  # 새로 켠 항목은 바로 읽기
 
     def nai_token(self, tok):
         tok = (tok or "").strip().strip('"').strip()
