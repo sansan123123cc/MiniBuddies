@@ -45,6 +45,11 @@ def dur(sec):
     return ((f"{d}일 " if d else "") + (f"{h}시간 " if h else "") + (f"{m}분" if m or not (d or h) else "")).strip()
 
 
+# 남은 장수: API 는 %만 줌. NovelAI 화면의 '12% remaining (~208 images)'·'14.3% (~247 images)' 로 맞춘 비율
+# (보통 해상도·28스텝 V5 기준 1% ≈ 17.34장)
+NAI_IMG_PER_PCT = 17.34
+
+
 def nai_parse(j):
     """구독 상태 JSON → {pct, anlas, next} / 로그인 필요면 None"""
     if not isinstance(j, dict) or j.get("statusCode"):
@@ -57,7 +62,7 @@ def nai_parse(j):
                                        if u.get("timeUntilNextPercent") is not None else "")
     if u.get("isNegative"):
         nxt = "한도를 넘겨서 지금은 아날이 들어가요"
-    return {"pct": pct, "anlas": anlas, "next": nxt, "opus": j.get("tier") == 3}
+    return {"pct": pct, "imgs": int(pct * NAI_IMG_PER_PCT), "anlas": anlas, "next": nxt, "opus": j.get("tier") == 3}
 
 
 HOME = re.compile(r"^https://claude\.ai/(new|recents|chats?|projects?|$)", re.I)
@@ -162,7 +167,7 @@ function renderNai(n){
   if(n.need_login||n.pct==null){el.innerHTML='<div class="t"><b>NovelAI</b>'+btn+'</div><div class="s">'+esc(n.status||'API 토큰을 넣으면 V5 남은 양·아날이 보여요')+'</div>'
     +'<div class="t" style="gap:4px"><input id="nt" type="password" placeholder="pst-… 토큰 붙여넣기" style="flex:1;min-width:0;border:1px solid #f3c6d8;border-radius:6px;padding:2px 5px;font:12px Malgun Gothic,sans-serif"><button onclick="saveTok()">저장</button></div>';return}
   var p=n.pct,c=p<=5?'var(--hot)':p<=20?'var(--warn)':'var(--ok)';
-  el.innerHTML='<div class="r"><div class="t"><b>NovelAI V5 남은 양</b><span>'+p+'%</span></div><div class="k"><i style="width:'+p+'%;background:'+c+'"></i></div>'
+  el.innerHTML='<div class="r"><div class="t"><b>NovelAI V5 남은 양</b><span>'+p+'%'+(n.imgs!=null?' · 약 '+Number(n.imgs).toLocaleString()+'장':'')+'</span></div><div class="k"><i style="width:'+p+'%;background:'+c+'"></i></div>'
     +(n.next?'<div class="s">'+esc(n.next)+'</div>':'')+'</div><div class="t" style="margin-top:4px"><b>아날</b><span>'+Number(n.anlas||0).toLocaleString()+'</span></div>'
     +(n.shown?'<div class="s">'+btn+'</div>':'')+(n.tok?'<div class="s"><button onclick="clearTok()" title="저장한 토큰 지우기">토큰 지우기</button></div>':'');
 }
