@@ -72,3 +72,5 @@ niko	xmas hanbok halloween valentine	2026-11-18
 su	xmas hanbok halloween valentine	2026-11-18
 chihaya	xmas hanbok halloween valentine	2026-11-18
 vivi	xmas hanbok halloween valentine	2026-11-18
+blanc	xmas hanbok halloween valentine	2026-11-23
+noir	xmas hanbok halloween valentine	2026-11-23

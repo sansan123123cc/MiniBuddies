@@ -72,3 +72,5 @@ niko	spring summer bday	2026-11-20
 su	spring summer bday	2026-11-20
 chihaya	spring summer bday	2026-11-20
 vivi	spring summer bday	2026-11-20
+blanc	spring summer bday	2026-11-23
+noir	spring summer bday	2026-11-23
