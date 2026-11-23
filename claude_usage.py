@@ -74,7 +74,7 @@ button:hover{background:#f7cfe0}
 .s{color:var(--sub);font-size:11px}
 #f{color:var(--sub);font-size:11px;margin-top:auto}
 </style></head><body><div id="p" class="pywebview-drag-region">
-<div id="h"><span class="pywebview-drag-region">Claude 사용량</span><button onclick="pywebview.api.refresh()" title="지금 새로 읽기">↻</button><button onclick="pywebview.api.login()" title="로그인 창 열기/닫기">로그인</button><button onclick="pywebview.api.close()" title="닫기">×</button></div>
+<div id="h"><span class="pywebview-drag-region">Claude 사용량</span><button onclick="pywebview.api.refresh()" title="지금 새로 읽기">↻</button><button id="lb" onclick="pywebview.api.login()" title="로그인 창 열기/닫기" hidden>로그인</button><button onclick="pywebview.api.close()" title="닫기">×</button></div>
 <div id="rows"><div class="s">불러오는 중…</div></div>
 <div id="f"></div></div>
 <script>
@@ -84,6 +84,7 @@ function render(d){
   rows.forEach(function(r){var c=r.pct>=95?'var(--hot)':r.pct>=80?'var(--warn)':'var(--ok)';
     h+='<div class="r"><div class="t"><b>'+esc(r.label)+'</b><span>'+r.pct+'%</span></div><div class="k"><i style="width:'+r.pct+'%;background:'+c+'"></i></div>'+(r.reset?'<div class="s">'+esc(r.reset)+'</div>':'')+'</div>'});
   document.getElementById('rows').innerHTML=h||'<div class="s">'+esc(d.status||'아직 숫자가 없어요')+'</div>';
+  var lb=document.getElementById('lb');lb.hidden=!(d.need_login||!rows.length||d.cw);lb.textContent=d.cw?'로그인 창 닫기':'로그인';
   document.getElementById('f').textContent=(rows.length&&d.status?d.status+' · ':'')+(d.time?'갱신 '+d.time:'');
 }
 </script></body></html>"""
@@ -127,6 +128,7 @@ class Widget:
             self.cw_shown = on
         except Exception:
             pass
+        self.push()
 
     def quit(self):
         self.alive = False
@@ -141,15 +143,18 @@ class Widget:
     def push(self):
         try:
             if self.ui:
-                self.ui.evaluate_js("render(%s)" % json.dumps(self.data, ensure_ascii=False))
+                self.ui.evaluate_js("render(%s)" % json.dumps(dict(self.data, cw=self.cw_shown), ensure_ascii=False))
                 n = max(2, len(self.data.get("rows") or []))
                 self.ui.resize(270, 74 + 50 * n)
         except Exception:
             pass
 
-    def set(self, rows=None, status=""):
+    def set(self, rows=None, status="", need_login=None):
         if rows is not None:
             self.data["rows"] = rows
+            self.data["need_login"] = False     # 숫자를 읽었으면 로그인된 것 → 로그인 버튼 숨김
+        if need_login is not None:
+            self.data["need_login"] = need_login
         self.data["status"] = status
         self.data["time"] = datetime.datetime.now().strftime("%H:%M")
         self.data["ts"] = time.time()
@@ -185,7 +190,7 @@ class Widget:
                     self.show_cw(False)
                 return
             if "/login" in url or "/logout" in url:
-                self.set(None, "로그인이 필요해요 — '로그인' 버튼")
+                self.set(None, "로그인이 필요해요 — '로그인' 버튼", need_login=True)
                 if not self.data.get("rows"):
                     self.show_cw(True)              # 처음이면 로그인 창을 바로 보여 줌
                 return
