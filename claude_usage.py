@@ -22,7 +22,9 @@ WEEK = re.compile(r"^(주간\s*한도|weekly)", re.I)
 NAI_URL = "https://novelai.net/image"
 NAI_HOME = re.compile(r"^https://novelai\.net/", re.I)
 # novelai.net 페이지 안에서만 실행: 그 페이지의 로그인으로 구독 상태를 물어보고 결과만 window.__nai 에 남김
+# '로그인 상태 유지'를 안 켜면 NovelAI 는 로그인 정보를 sessionStorage 에만 둠 → 거기서도 찾고, 위젯 전용 창이니 localStorage 로 옮겨 다음 실행에도 유지
 NAI_JS = r"""(function(){try{var s=JSON.parse(localStorage.getItem('session')||'null');
+if(!s||!s.auth_token){s=JSON.parse(sessionStorage.getItem('session')||'null');if(s&&s.auth_token){try{localStorage.setItem('session',JSON.stringify(s))}catch(e){}}}
 if(!s||!s.auth_token){window.__nai={login:true};return 'login'}
 window.__nai=null;
 fetch('https://image.novelai.net/user/subscription',{headers:{Authorization:'Bearer '+s.auth_token}})
