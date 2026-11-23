@@ -6,7 +6,7 @@
   사용량 화면을 5분마다 열어 글자만 읽음. 로그인은 이 위젯 전용 저장소(%APPDATA%\\DesktopPet\\claude_usage)에만 남음
 - 읽은 숫자는 usage.json 에 저장 → 펫이 80%·95% 넘으면 말풍선으로 알려 줌
 - NovelAI 도 같이: 위젯 전용 브라우저로 novelai.net 에 한 번 로그인해 두면, 그 페이지 안에서 구독 상태
-  (V5 같은 최신 모델의 남은 사용량 %, 다음 1% 충전까지 시간, 아날)만 읽어 옴. 로그인 정보는 페이지 밖으로 안 나감
+  (V5 같은 최신 모델의 남은 사용량 %, 다음 1% 충전까지 시간, Anlas)만 읽어 옴. 로그인 정보는 페이지 밖으로 안 나감
 """
 import os, sys, json, time, re, threading, datetime
 
@@ -61,7 +61,7 @@ def nai_parse(j):
     nxt = "가득 찼어요" if pct >= 100 else ("다음 1% 충전까지 " + dur(u.get("timeUntilNextPercent"))
                                        if u.get("timeUntilNextPercent") is not None else "")
     if u.get("isNegative"):
-        nxt = "한도를 넘겨서 지금은 아날이 들어가요"
+        nxt = "한도를 넘겨서 지금은 Anlas 가 들어가요"
     return {"pct": pct, "imgs": int(pct * NAI_IMG_PER_PCT), "anlas": anlas, "next": nxt, "opus": j.get("tier") == 3}
 
 
@@ -164,11 +164,11 @@ function renderNai(n){
   if(!n){el.innerHTML='';return}
   var a=document.activeElement;if(a&&a.id==='nt'&&a.value)return;
   var btn='<button onclick="pywebview.api.nai_login()">'+(n.shown?'NAI 창 닫기':'NAI 로그인')+'</button>';
-  if(n.need_login||n.pct==null){el.innerHTML='<div class="t"><b>NovelAI</b>'+btn+'</div><div class="s">'+esc(n.status||'API 토큰을 넣으면 V5 남은 양·아날이 보여요')+'</div>'
+  if(n.need_login||n.pct==null){el.innerHTML='<div class="t"><b>NovelAI</b>'+btn+'</div><div class="s">'+esc(n.status||'API 토큰을 넣으면 V5 남은 양·Anlas 가 보여요')+'</div>'
     +'<div class="t" style="gap:4px"><input id="nt" type="password" placeholder="pst-… 토큰 붙여넣기" style="flex:1;min-width:0;border:1px solid #f3c6d8;border-radius:6px;padding:2px 5px;font:12px Malgun Gothic,sans-serif"><button onclick="saveTok()">저장</button></div>';return}
   var p=n.pct,c=p<=5?'var(--hot)':p<=20?'var(--warn)':'var(--ok)';
   el.innerHTML='<div class="r"><div class="t"><b>NovelAI V5 남은 양</b><span>'+p+'%'+(n.imgs!=null?' · 약 '+Number(n.imgs).toLocaleString()+'장':'')+'</span></div><div class="k"><i style="width:'+p+'%;background:'+c+'"></i></div>'
-    +(n.next?'<div class="s">'+esc(n.next)+'</div>':'')+'</div><div class="t" style="margin-top:4px"><b>아날</b><span>'+Number(n.anlas||0).toLocaleString()+'</span></div>'
+    +(n.next?'<div class="s">'+esc(n.next)+'</div>':'')+'</div><div class="t" style="margin-top:4px"><b>Anlas</b><span>'+Number(n.anlas||0).toLocaleString()+'</span></div>'
     +(n.shown?'<div class="s">'+btn+'</div>':'')+(n.tok?'<div class="s"><button onclick="clearTok()" title="저장한 토큰 지우기">토큰 지우기</button></div>':'');
 }
 function clearTok(){pywebview.api.nai_token('')}
