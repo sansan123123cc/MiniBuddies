@@ -14,6 +14,8 @@ USAGE_URL = "https://claude.ai/settings/usage"
 DATA = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "DesktopPet", "claude_usage")
 OUT = os.path.join(DATA, "usage.json")
 WIN = os.path.join(DATA, "window.json")
+NAI_TOKEN = os.path.join(DATA, "nai_token.txt")   # NovelAI '영구 API 토큰'(pst-…) — 이 PC 에만 저장
+NAI_API = ("https://image.novelai.net/user/subscription", "https://api.novelai.net/user/subscription")
 EVERY = 300                      # 몇 초마다 새로 읽을지
 
 PCT = re.compile(r"(\d{1,3})\s*%\s*(사용|used)", re.I)
@@ -59,6 +61,36 @@ def nai_parse(j):
 
 
 HOME = re.compile(r"^https://claude\.ai/(new|recents|chats?|projects?|$)", re.I)
+
+
+def nai_token():
+    try:
+        with open(NAI_TOKEN, encoding="utf-8") as f:
+            return f.read().strip()
+    except Exception:
+        return ""
+
+
+def nai_fetch(token):
+    """영구 API 토큰으로 구독 상태를 직접 물어봄 → (결과 dict 또는 None, 상태 글자)"""
+    import urllib.request, urllib.error
+    last = "NovelAI 에 연결을 못 했어요"
+    for url in NAI_API:
+        req = urllib.request.Request(url, headers={"Authorization": "Bearer " + token, "Accept": "application/json",
+                                                   "User-Agent": "Mozilla/5.0 (DesktopPet usage widget)"})
+        try:
+            with urllib.request.urlopen(req, timeout=15) as r:
+                n = nai_parse(json.loads(r.read().decode("utf-8")))
+                if n:
+                    return n, ""
+                last = "NovelAI 응답을 못 읽었어요"
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403):
+                return None, "토큰이 맞지 않아요 — 다시 붙여 넣어 주세요"
+            last = "NovelAI 응답 오류 (%s)" % e.code
+        except Exception:
+            pass
+    return None, last
 
 
 def parse(text):
@@ -125,13 +157,17 @@ function esc(s){return String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt
 function renderNai(n){
   var el=document.getElementById('nai');
   if(!n){el.innerHTML='';return}
+  var a=document.activeElement;if(a&&a.id==='nt'&&a.value)return;
   var btn='<button onclick="pywebview.api.nai_login()">'+(n.shown?'NAI 창 닫기':'NAI 로그인')+'</button>';
-  if(n.need_login||n.pct==null){el.innerHTML='<div class="t"><b>NovelAI</b>'+btn+'</div><div class="s">'+esc(n.status||'novelai.net 에 로그인하면 V5 남은 양·아날이 보여요')+'</div>';return}
+  if(n.need_login||n.pct==null){el.innerHTML='<div class="t"><b>NovelAI</b>'+btn+'</div><div class="s">'+esc(n.status||'API 토큰을 넣으면 V5 남은 양·아날이 보여요')+'</div>'
+    +'<div class="t" style="gap:4px"><input id="nt" type="password" placeholder="pst-… 토큰 붙여넣기" style="flex:1;min-width:0;border:1px solid #f3c6d8;border-radius:6px;padding:2px 5px;font:12px Malgun Gothic,sans-serif"><button onclick="saveTok()">저장</button></div>';return}
   var p=n.pct,c=p<=5?'var(--hot)':p<=20?'var(--warn)':'var(--ok)';
   el.innerHTML='<div class="r"><div class="t"><b>NovelAI V5 남은 양</b><span>'+p+'%</span></div><div class="k"><i style="width:'+p+'%;background:'+c+'"></i></div>'
     +(n.next?'<div class="s">'+esc(n.next)+'</div>':'')+'</div><div class="t" style="margin-top:4px"><b>아날</b><span>'+Number(n.anlas||0).toLocaleString()+'</span></div>'
-    +(n.shown?'<div class="s">'+btn+'</div>':'');
+    +(n.shown?'<div class="s">'+btn+'</div>':'')+(n.tok?'<div class="s"><button onclick="clearTok()" title="저장한 토큰 지우기">토큰 지우기</button></div>':'');
 }
+function clearTok(){pywebview.api.nai_token('')}
+function saveTok(){var i=document.getElementById('nt');var v=(i&&i.value||'').trim();if(!v)return;i.value='';pywebview.api.nai_token(v)}
 function render(d){
   var rows=d.rows||[],h='';
   rows.forEach(function(r){var c=r.pct>=95?'var(--hot)':r.pct>=80?'var(--warn)':'var(--ok)';
@@ -194,7 +230,19 @@ class Widget:
         self.push()
 
     def read_nai(self, wait=24):
-        """novelai.net 페이지 안에서 구독 상태를 물어봄 → data['nai']. 성공하면 True"""
+        """구독 상태를 물어봄 → data['nai']. 성공하면 True
+        1) 저장한 영구 API 토큰이 있으면 그걸로 직접 (구글 로그인 계정도 됨)
+        2) 없으면 위젯 전용 창의 novelai.net 로그인으로 (이메일·비밀번호 로그인만 됨 — 구글 로그인 팝업은 위젯 창에서 못 돌아옴)"""
+        tok = nai_token()
+        if tok:
+            n, st = nai_fetch(tok)
+            if n:
+                self.set_nai(n)
+                if self.nw_shown:
+                    self.show_nw(False)
+                return True
+            self.set_nai({"need_login": True, "status": st})
+            return False
         if self.nw is None:
             self.make_nw()
             time.sleep(4)
@@ -269,8 +317,8 @@ class Widget:
     def height(self):
         n = max(2, len(self.data.get("rows") or []))
         nai = self.data.get("nai") or {}
-        extra = 0 if not nai else (44 if nai.get("need_login") or nai.get("pct") is None else 82)
-        if nai.get("shown") and extra == 82:
+        extra = 0 if not nai else (72 if nai.get("need_login") or nai.get("pct") is None else 82)
+        if extra == 82 and (nai.get("shown") or nai.get("tok")):
             extra += 24
         return 74 + 50 * n + extra
 
@@ -279,7 +327,7 @@ class Widget:
             if self.ui:
                 nai = self.data.get("nai")
                 if nai is not None:
-                    nai = dict(nai, shown=self.nw_shown)
+                    nai = dict(nai, shown=self.nw_shown, tok=bool(nai_token()))
                 self.ui.evaluate_js("render(%s)" % json.dumps(dict(self.data, cw=self.cw_shown, nai=nai), ensure_ascii=False))
                 self.ui.resize(270, self.height())
         except Exception:
@@ -390,6 +438,24 @@ class Api:
     def nai_login(self):
         self._w.show_nw(not self._w.nw_shown)
         self._w.kick.set()
+
+    def nai_token(self, tok):
+        tok = (tok or "").strip().strip('"').strip()
+        try:
+            os.makedirs(DATA, exist_ok=True)
+            if tok:
+                with open(NAI_TOKEN, "w", encoding="utf-8") as f:
+                    f.write(tok)
+            elif os.path.exists(NAI_TOKEN):
+                os.remove(NAI_TOKEN)
+        except Exception:
+            pass
+        w = self._w
+        if tok:
+            w.set_nai({"need_login": True, "status": "토큰 확인 중…"})
+            threading.Thread(target=w.read_nai, daemon=True).start()
+        else:
+            w.set_nai({"need_login": True})
 
     def close(self):
         threading.Thread(target=self._w.quit, daemon=True).start()
