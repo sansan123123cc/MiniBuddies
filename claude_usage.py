@@ -5,6 +5,8 @@
 - 숫자는 공식 통로가 없어서, 위젯 안의 작은 브라우저(Edge WebView2)로 claude.ai 에 한 번 로그인해 두고
   사용량 화면을 5분마다 열어 글자만 읽음. 로그인은 이 위젯 전용 저장소(%APPDATA%\\DesktopPet\\claude_usage)에만 남음
 - 읽은 숫자는 usage.json 에 저장 → 펫이 80%·95% 넘으면 말풍선으로 알려 줌
+- NovelAI 도 같이: 위젯 전용 브라우저로 novelai.net 에 한 번 로그인해 두면, 그 페이지 안에서 구독 상태
+  (V5 같은 최신 모델의 남은 사용량 %, 다음 1% 충전까지 시간, 아날)만 읽어 옴. 로그인 정보는 페이지 밖으로 안 나감
 """
 import os, sys, json, time, re, threading, datetime
 
@@ -17,6 +19,43 @@ EVERY = 300                      # 몇 초마다 새로 읽을지
 PCT = re.compile(r"(\d{1,3})\s*%\s*(사용|used)", re.I)
 RESET = re.compile(r"(초기화|reset)", re.I)
 WEEK = re.compile(r"^(주간\s*한도|weekly)", re.I)
+NAI_URL = "https://novelai.net/image"
+NAI_HOME = re.compile(r"^https://novelai\.net/", re.I)
+# novelai.net 페이지 안에서만 실행: 그 페이지의 로그인으로 구독 상태를 물어보고 결과만 window.__nai 에 남김
+NAI_JS = r"""(function(){try{var s=JSON.parse(localStorage.getItem('session')||'null');
+if(!s||!s.auth_token){window.__nai={login:true};return 'login'}
+window.__nai=null;
+fetch('https://image.novelai.net/user/subscription',{headers:{Authorization:'Bearer '+s.auth_token}})
+.then(function(r){return r.json()}).then(function(j){window.__nai={ok:true,j:j}})
+.catch(function(e){window.__nai={err:String(e)}});return 'started'}catch(e){window.__nai={err:String(e)};return 'err'}})()"""
+
+
+def dur(sec):
+    """초 → '1시간 40분' / '40분'"""
+    try:
+        m = max(0, int(sec)) // 60
+    except Exception:
+        return ""
+    h, m = divmod(m, 60)
+    d, h = divmod(h, 24)
+    return ((f"{d}일 " if d else "") + (f"{h}시간 " if h else "") + (f"{m}분" if m or not (d or h) else "")).strip()
+
+
+def nai_parse(j):
+    """구독 상태 JSON → {pct, anlas, next} / 로그인 필요면 None"""
+    if not isinstance(j, dict) or j.get("statusCode"):
+        return None
+    u = j.get("usage") or {}
+    t = j.get("trainingStepsLeft") or {}
+    anlas = int(t.get("fixedTrainingStepsLeft") or 0) + int(t.get("purchasedTrainingSteps") or 0)
+    pct = max(0, min(100, int(u.get("percent") or 0)))
+    nxt = "가득 찼어요" if pct >= 100 else ("다음 1% 충전까지 " + dur(u.get("timeUntilNextPercent"))
+                                       if u.get("timeUntilNextPercent") is not None else "")
+    if u.get("isNegative"):
+        nxt = "한도를 넘겨서 지금은 아날이 들어가요"
+    return {"pct": pct, "anlas": anlas, "next": nxt, "opus": j.get("tier") == 3}
+
+
 HOME = re.compile(r"^https://claude\.ai/(new|recents|chats?|projects?|$)", re.I)
 
 
@@ -73,17 +112,30 @@ button:hover{background:#f7cfe0}
 .k{height:7px;border-radius:4px;background:var(--bar);overflow:hidden}.k i{display:block;height:100%;border-radius:4px;background:var(--ok)}
 .s{color:var(--sub);font-size:11px}
 #f{color:var(--sub);font-size:11px;margin-top:auto}
+#nai{display:flex;flex-direction:column;gap:2px;border-top:1px dashed #f3c6d8;padding-top:6px}#nai:empty{display:none}
 </style></head><body><div id="p" class="pywebview-drag-region">
 <div id="h"><span class="pywebview-drag-region">Claude 사용량</span><button onclick="pywebview.api.refresh()" title="지금 새로 읽기">↻</button><button id="lb" onclick="pywebview.api.login()" title="로그인 창 열기/닫기" hidden>로그인</button><button onclick="pywebview.api.close()" title="닫기">×</button></div>
 <div id="rows"><div class="s">불러오는 중…</div></div>
+<div id="nai"></div>
 <div id="f"></div></div>
 <script>
 function esc(s){return String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function renderNai(n){
+  var el=document.getElementById('nai');
+  if(!n){el.innerHTML='';return}
+  var btn='<button onclick="pywebview.api.nai_login()">'+(n.shown?'NAI 창 닫기':'NAI 로그인')+'</button>';
+  if(n.need_login||n.pct==null){el.innerHTML='<div class="t"><b>NovelAI</b>'+btn+'</div><div class="s">'+esc(n.status||'novelai.net 에 로그인하면 V5 남은 양·아날이 보여요')+'</div>';return}
+  var p=n.pct,c=p<=5?'var(--hot)':p<=20?'var(--warn)':'var(--ok)';
+  el.innerHTML='<div class="r"><div class="t"><b>NovelAI V5 남은 양</b><span>'+p+'%</span></div><div class="k"><i style="width:'+p+'%;background:'+c+'"></i></div>'
+    +(n.next?'<div class="s">'+esc(n.next)+'</div>':'')+'</div><div class="t" style="margin-top:4px"><b>아날</b><span>'+Number(n.anlas||0).toLocaleString()+'</span></div>'
+    +(n.shown?'<div class="s">'+btn+'</div>':'');
+}
 function render(d){
   var rows=d.rows||[],h='';
   rows.forEach(function(r){var c=r.pct>=95?'var(--hot)':r.pct>=80?'var(--warn)':'var(--ok)';
     h+='<div class="r"><div class="t"><b>'+esc(r.label)+'</b><span>'+r.pct+'%</span></div><div class="k"><i style="width:'+r.pct+'%;background:'+c+'"></i></div>'+(r.reset?'<div class="s">'+esc(r.reset)+'</div>':'')+'</div>'});
   document.getElementById('rows').innerHTML=h||'<div class="s">'+esc(d.status||'아직 숫자가 없어요')+'</div>';
+  renderNai(d.nai);
   var lb=document.getElementById('lb');lb.hidden=!(d.need_login||!rows.length||d.cw);lb.textContent=d.cw?'로그인 창 닫기':'로그인';
   document.getElementById('f').textContent=(rows.length&&d.status?d.status+' · ':'')+(d.time?'갱신 '+d.time:'');
 }
@@ -96,6 +148,8 @@ class Widget:
         self.ui = None
         self.cw = None                # claude.ai 를 여는 브라우저 창 (평소엔 숨김, 로그인할 때만 보임)
         self.cw_shown = False
+        self.nw = None                # novelai.net 을 여는 브라우저 창 (평소엔 숨김)
+        self.nw_shown = False
         self.data = load_json(OUT) or {"rows": [], "status": "", "time": ""}
         self.kick = threading.Event()
         self.alive = True
@@ -104,7 +158,8 @@ class Widget:
     def make_ui(self):
         pos = load_json(WIN)
         n = max(2, len(self.data.get("rows") or []))
-        self.ui = self.wv.create_window("Claude 사용량", html=UI_HTML, js_api=Api(self), width=270, height=74 + 50 * n,
+        self.data.setdefault("nai", {"need_login": True})
+        self.ui = self.wv.create_window("Claude 사용량", html=UI_HTML, js_api=Api(self), width=270, height=self.height(),
                                         x=pos.get("x"), y=pos.get("y"), frameless=True, easy_drag=False,
                                         on_top=True, resizable=False, background_color="#FFF7FA")
         self.ui.events.loaded += lambda: self.push()
@@ -115,6 +170,75 @@ class Widget:
         self.cw = self.wv.create_window("Claude 로그인 (사용량 위젯 전용)", USAGE_URL, width=980, height=780, hidden=True)
         self.cw_shown = False
         self.cw.events.closed += self._cw_closed
+
+    def make_nw(self):
+        self.nw = self.wv.create_window("NovelAI 로그인 (사용량 위젯 전용)", NAI_URL, width=980, height=780, hidden=True)
+        self.nw_shown = False
+        self.nw.events.closed += self._nw_closed
+
+    def _nw_closed(self):
+        self.nw = None
+        self.nw_shown = False
+        self.push()
+
+    def show_nw(self, on):
+        if self.nw is None:
+            self.make_nw()
+        try:
+            (self.nw.show if on else self.nw.hide)()
+            self.nw_shown = on
+        except Exception:
+            pass
+        self.push()
+
+    def read_nai(self, wait=24):
+        """novelai.net 페이지 안에서 구독 상태를 물어봄 → data['nai']. 성공하면 True"""
+        if self.nw is None:
+            self.make_nw()
+            time.sleep(4)
+        try:
+            url = self.nw.get_current_url() or ""
+            if not NAI_HOME.match(url):
+                self.nw.load_url(NAI_URL)
+                time.sleep(4)
+            st = self.nw.evaluate_js(NAI_JS)
+        except Exception:
+            return False
+        if st == "login":
+            self.set_nai({"need_login": True})
+            return False
+        for _ in range(wait):
+            time.sleep(1.0)
+            if not self.alive:
+                return False
+            try:
+                r = json.loads(self.nw.evaluate_js("JSON.stringify(window.__nai||null)") or "null")
+            except Exception:
+                r = None
+            if not r:
+                continue
+            if r.get("ok"):
+                n = nai_parse(r.get("j"))
+                if n is None:
+                    self.set_nai({"need_login": True})
+                    return False
+                self.set_nai(n)
+                if self.nw_shown:
+                    self.show_nw(False)
+                return True
+            if r.get("login"):
+                self.set_nai({"need_login": True})
+                return False
+            self.set_nai(dict(self.data.get("nai") or {}, status="NovelAI 를 못 읽었어요"))
+            return False
+        return False
+
+    def set_nai(self, n):
+        n = dict(n)
+        n["time"] = datetime.datetime.now().strftime("%H:%M")
+        self.data["nai"] = n
+        save_json(OUT, self.data)
+        self.push()
 
     def _cw_closed(self):
         self.cw = None
@@ -140,12 +264,22 @@ class Widget:
                 pass
 
     # ── 숫자 표시·저장 ──────────────────
+    def height(self):
+        n = max(2, len(self.data.get("rows") or []))
+        nai = self.data.get("nai") or {}
+        extra = 0 if not nai else (44 if nai.get("need_login") or nai.get("pct") is None else 82)
+        if nai.get("shown") and extra == 82:
+            extra += 24
+        return 74 + 50 * n + extra
+
     def push(self):
         try:
             if self.ui:
-                self.ui.evaluate_js("render(%s)" % json.dumps(dict(self.data, cw=self.cw_shown), ensure_ascii=False))
-                n = max(2, len(self.data.get("rows") or []))
-                self.ui.resize(270, 74 + 50 * n)
+                nai = self.data.get("nai")
+                if nai is not None:
+                    nai = dict(nai, shown=self.nw_shown)
+                self.ui.evaluate_js("render(%s)" % json.dumps(dict(self.data, cw=self.cw_shown, nai=nai), ensure_ascii=False))
+                self.ui.resize(270, self.height())
         except Exception:
             pass
 
@@ -220,10 +354,16 @@ class Widget:
                 self.kick.wait(3)
                 self.kick.clear()
                 continue
+            if self.nw_shown:                         # NovelAI 로그인 창이 열려 있는 동안: 로그인되면 바로 읽고 창 닫기
+                self.read_nai(wait=4)
+                self.kick.wait(3)
+                self.kick.clear()
+                continue
             if time.time() - last >= EVERY or self.kick.is_set():
                 self.kick.clear()
                 last = time.time()
                 self.read_once()
+                self.read_nai()
                 continue
             self.kick.wait(5)
 
@@ -245,6 +385,10 @@ class Api:
         self._w.show_cw(not self._w.cw_shown)
         self._w.kick.set()
 
+    def nai_login(self):
+        self._w.show_nw(not self._w.nw_shown)
+        self._w.kick.set()
+
     def close(self):
         threading.Thread(target=self._w.quit, daemon=True).start()
 
@@ -255,6 +399,7 @@ def main():
     w = Widget(webview)
     w.make_ui()
     w.make_cw()
+    w.make_nw()
     kw = dict(private_mode=False, storage_path=os.path.join(DATA, "web"))
     if sys.platform == "win32":
         kw["gui"] = "edgechromium"
