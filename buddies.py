@@ -880,7 +880,10 @@ AI_GUIDE = ("캐릭터에게 물어보기는 Claude 말고도 ChatGPT·Gemini �
             "3) '대답해 줄 AI'를 Gemini 로 바꾸고 저장\n"
             "※ 무료 키는 하루 사용량 제한이 있고, 인터넷 검색(최신 뉴스 등)은 무료 키로는 안 될 수 있어요. 그땐 검색 없이 대답해요.\n"
             "※ 무료 키로 보낸 내용은 구글이 서비스 개선에 쓸 수 있어요. 개인 정보는 묻지 마세요.\n\n"
-            "Claude 만 되는 것: 다른 친구들에게 동작 시키기, 알림 예약, 노래 틀기, 화면 같이 보기, 파일 작업.")
+            "Claude 만 되는 것: 다른 친구들에게 동작 시키기, 알림 예약, 노래 틀기, 화면 같이 보기, 파일 작업.\n\n"
+            "■ Claude 스킬 (Claude 앱에서 펫 움직이기)\n"
+            "'Claude 스킬 받기'로 MiniBuddies_pet.skill 을 받아 Claude 앱 → 설정 → 기능 → 스킬에 올리고, "
+            "'딸깍! Claude 랑 연결하기'까지 해 두면 Claude 대화에서 '펫한테 알려 줘', '10분 뒤에 알려 줘' 같은 말로 캐릭터를 움직일 수 있어요.")
 
 def usagi_only(text):
     """우사기: 원작 어록 소리만 남기기 (사람 말이 섞이면 우사기 소리로 바꿈 — 대답·검색 결과도)"""
@@ -6655,6 +6658,10 @@ class SettingsDialog(QDialog):
         bt3 = QPushButton("ChatGPT·Gemini 설치·연결 방법")
         bt3.clicked.connect(self.ai_guide)
         row.addWidget(bt3)
+        bt4 = QPushButton("Claude 스킬 받기")
+        bt4.setToolTip("Claude 앱 → 설정 → 기능(Capabilities) → 스킬 → 업로드에 이 파일을 올리면, Claude 대화에서 '펫한테 알려 줘' 같은 말로 캐릭터를 움직일 수 있어요")
+        bt4.clicked.connect(lambda: __import__("webbrowser").open("https://github.com/sansan123123cc/MiniBuddies/raw/main/MiniBuddies_pet.skill"))
+        row.addWidget(bt4)
         ag.addLayout(row)
         gr = QHBoxLayout(); gr.addWidget(QLabel("Gemini API 키:"))
         self.gemini_key = QLineEdit(self.app.cfg.get("gemini_key", "")); self.gemini_key.setEchoMode(QLineEdit.Password)
