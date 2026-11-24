@@ -869,14 +869,15 @@ def _marian_only():
 USAGI_VOICE = ["하아~?", "야하!", "울라~", "우라!", "뿌르르르르르 이야하!!!!!", "우나~ 야하야하", "후응~", "우라라라!", "츠츠, 우라우라"]
 
 AI_GUIDE = ("캐릭터에게 물어보기는 Claude 말고도 ChatGPT·Gemini 로 할 수 있어요.\n\n"
+            "★ 제일 쉬운 방법: 이 탭의 '딸깍! ChatGPT 연결' 또는 '딸깍! Gemini 연결 (무료)' 버튼만 누르세요. 아래는 직접 할 때 방법이에요.\n\n"
             "■ ChatGPT (ChatGPT Plus 등 구독이 있으면 추가 요금 없음)\n"
             "1) Node.js 를 깔아요: https://nodejs.org (LTS 버전)\n"
             "2) PowerShell 을 열고:  npm install -g @openai/codex\n"
             "3) 이어서:  codex login   → 브라우저가 열리면 ChatGPT 계정으로 로그인\n"
-            "4) 환경설정 → 기타 → '대답해 줄 AI'를 ChatGPT 로 바꾸고 저장\n\n"
+            "4) 환경설정 → AI 연결 → '대답해 줄 AI'를 ChatGPT 로 바꾸고 저장\n\n"
             "■ Gemini (구독 없이 무료)\n"
             "1) https://aistudio.google.com/apikey 에서 구글 계정으로 로그인 → 'API 키 만들기'\n"
-            "2) 받은 키를 환경설정 → 기타 → 'Gemini API 키' 칸에 붙여넣기\n"
+            "2) 받은 키를 환경설정 → AI 연결 → 'Gemini API 키' 칸에 붙여넣기\n"
             "3) '대답해 줄 AI'를 Gemini 로 바꾸고 저장\n"
             "※ 무료 키는 하루 사용량 제한이 있고, 인터넷 검색(최신 뉴스 등)은 무료 키로는 안 될 수 있어요. 그땐 검색 없이 대답해요.\n"
             "※ 무료 키로 보낸 내용은 구글이 서비스 개선에 쓸 수 있어요. 개인 정보는 묻지 마세요.\n\n"
@@ -6078,7 +6079,7 @@ class SettingsDialog(QDialog):
         self.group_scr = []
         self.outfit_box = {}
         # 탭 5개: 캐릭터 · 화면·움직임 · 알림·노래 · Claude · 업데이트 (예전 8개 탭을 묶음)
-        etc_w = self.tab_etc()                 # Claude 탭 (여기서 만든 자동 실행·자리 비움 마중은 '화면·움직임'으로)
+        etc_w = self.tab_etc()                 # AI 연결 탭 (여기서 만든 자동 실행·자리 비움 마중은 '화면·움직임'으로)
         parts = []
         if app.one_each and len(app.roster) >= 2:
             parts.append(("부를 친구", self.tab_chars()))
@@ -6090,7 +6091,7 @@ class SettingsDialog(QDialog):
                                  ("그 밖에", self.tab_more())]), "화면·움직임")
         tabs.addTab(self._stack([("알림 시각", self.tab_alarm()), ("노래 목록", self.tab_music())]), "알림·노래")
         self.tabs = tabs
-        tabs.addTab(etc_w, "Claude")
+        tabs.addTab(etc_w, "AI 연결")
         tabs.addTab(self._stack([("", self.tab_update()),
                                  ("", QLabel("설정은 프로그램 폴더의 settings.json 에 저장돼요."))]), "업데이트")
         # 탭 내용이 길어도 창이 모니터 밖으로 넘치지 않게 — 탭마다 스크롤 영역으로 감싸기
@@ -6122,6 +6123,7 @@ class SettingsDialog(QDialog):
             self.banner.setAlignment(Qt.AlignCenter)
             self.banner.setStyleSheet("border-radius:10px;")
             lay.addWidget(self.banner)
+        lay.addLayout(self.search_bar(tabs))
         lay.addWidget(tabs); lay.addLayout(bot)
         self.adjustSize()
         cur = target_screen().availableGeometry()
@@ -6461,6 +6463,78 @@ class SettingsDialog(QDialog):
         self.sz.setCurrentIndex(i if i >= 0 else self.sz.count() - 1)
 
     # 움직임: 흔들림 · 자동 단체 놀이 · 말풍선
+    def search_bar(self, tabs):
+        """설정 검색: 글자(초성도 OK)로 항목을 찾아 그 탭으로 데려가고 반짝 표시"""
+        from PyQt5.QtWidgets import QLineEdit, QListWidget, QListWidgetItem, QCheckBox, QRadioButton, QScrollArea
+        box = QVBoxLayout()
+        self.set_q = QLineEdit(); self.set_q.setClearButtonEnabled(True)
+        self.set_q.setPlaceholderText("설정 찾기 — 예: 크기, 알림, 검색, Gemini, 자동 실행 (초성 ㅋㄱ 도 돼요)")
+        self.set_res = QListWidget(); self.set_res.setMaximumHeight(170); self.set_res.hide()
+        box.addWidget(self.set_q); box.addWidget(self.set_res)
+        idx = []
+        for i in range(tabs.count()):
+            page, tname = tabs.widget(i), tabs.tabText(i)
+            for w in page.findChildren(QWidget):
+                if isinstance(w, QGroupBox):
+                    t = w.title()
+                elif isinstance(w, (QCheckBox, QRadioButton, QPushButton, QLabel)):
+                    t = w.text()
+                elif isinstance(w, QComboBox):
+                    t = " / ".join(w.itemText(k) for k in range(w.count()))
+                else:
+                    continue
+                t = re.sub(r"<[^>]+>", "", t or "").replace("&", "").strip()
+                if len(t) < 2:
+                    continue
+                tip = (w.toolTip() or "").strip()
+                if isinstance(w, QLabel) and w.buddy() is None and len(t) > 120:
+                    t = t[:120]
+                idx.append((i, tname, w, t, tip))
+        def norm(x):
+            return x.lower().replace(" ", "")
+        def find(text):
+            q = norm(text)
+            self.set_res.clear()
+            if not q:
+                self.set_res.hide(); return
+            cq = self._cho(q)
+            n = 0
+            for i, tname, w, t, tip in idx:
+                if w.isHidden():
+                    continue
+                hay = norm(t + " " + tip + " " + tname)
+                if q in hay or (all("ㄱ" <= ch <= "ㅎ" for ch in q) and cq in self._cho(hay)):
+                    one = t.splitlines()[0]
+                    it = QListWidgetItem(f"{tname}  ›  {one[:70]}" + ("…" if len(one) > 70 else ""))
+                    it.setData(Qt.UserRole, (i, w))
+                    self.set_res.addItem(it); n += 1
+                    if n >= 40:
+                        break
+            if not n:
+                self.set_res.addItem("찾는 설정이 없어요 — 다른 말로 찾아봐 주세요")
+            self.set_res.show()
+        def go(item):
+            d = item.data(Qt.UserRole)
+            if not d:
+                return
+            i, w = d
+            tabs.setCurrentIndex(i)
+            sa = tabs.widget(i)
+            if isinstance(sa, QScrollArea):
+                QTimer.singleShot(50, lambda: sa.ensureWidgetVisible(w, 40, 80))
+            old = w.styleSheet()
+            w.setStyleSheet(old + ";background:#ffe36e;border-radius:4px;")
+            QTimer.singleShot(1800, lambda: w.setStyleSheet(old))
+            try:
+                w.setFocus()
+            except Exception:
+                pass
+        self.set_q.textChanged.connect(find)
+        self.set_q.returnPressed.connect(lambda: self.set_res.count() and go(self.set_res.item(0)))
+        self.set_res.itemClicked.connect(go)
+        self.set_res.itemActivated.connect(go)
+        return box
+
     def _stack(self, parts):
         """여러 탭 내용을 제목 상자로 묶어 한 탭에 위아래로"""
         w = QWidget(); v = QVBoxLayout(w)
@@ -6617,7 +6691,7 @@ class SettingsDialog(QDialog):
         v.addLayout(f)
         note = QLabel("※ 유튜브 영상을 내려받지 않고 유튜브에서 바로 재생해요. 멈출 땐 우클릭 → 노래 틀기 ♪ → 노래 끄기.\n"
                       "※ 숨김 플레이어는 따로 쓰는 프로필이라 광고가 나올 수 있어요. '플레이어 창 보기'에서 유튜브에 한 번 로그인해 두면 그대로 유지돼요.\n"
-                      "※ 캐릭터에게 '비 오는 날 듣기 좋은 노래 10곡 틀어 줘'처럼 부탁하면 찾아서 목록에 저장하고 틀어 줘요 (기타 탭의 인터넷 검색 허용 필요).")
+                      "※ 캐릭터에게 '비 오는 날 듣기 좋은 노래 10곡 틀어 줘'처럼 부탁하면 찾아서 목록에 저장하고 틀어 줘요 (AI 연결 탭의 인터넷 검색 허용 필요).")
         note.setWordWrap(True)
         v.addWidget(note)
         return w
@@ -6630,7 +6704,7 @@ class SettingsDialog(QDialog):
         later = []                             # 물어보기와 따로 보여 줄 Claude 묶음 (수다·브리핑)
         ask = QGroupBox("캐릭터에게 물어보기")
         ag = QVBoxLayout(ask)
-        self.ask_dbl = QCheckBox("캐릭터를 따닥(더블클릭)하면 Claude 새 대화로 물어보기")
+        self.ask_dbl = QCheckBox("캐릭터를 따닥(더블클릭)하면 물어보기")
         self.ask_dbl.setChecked(self.app.cfg.get("ask_dbl", True))
         ag.addWidget(self.ask_dbl)
         cli = self.app.claude_cli()
@@ -6655,7 +6729,17 @@ class SettingsDialog(QDialog):
             bt2 = QPushButton(lab)
             bt2.clicked.connect(lambda _=False, fn=fn: self.open_file(fn))
             row.addWidget(bt2)
-        bt3 = QPushButton("ChatGPT·Gemini 설치·연결 방법")
+        ag.addLayout(row)
+        row = QHBoxLayout()
+        bc = QPushButton("딸깍! ChatGPT 연결")
+        bc.setToolTip("ChatGPT 구독 계정으로 대답하게 해요. 필요한 프로그램을 알아서 깔고, 브라우저가 열리면 ChatGPT 로그인만 하면 끝!")
+        bc.clicked.connect(self.connect_codex)
+        row.addWidget(bc)
+        bg = QPushButton("딸깍! Gemini 연결 (무료)")
+        bg.setToolTip("구글 계정으로 무료 키를 받아 Gemini 로 대답하게 해요")
+        bg.clicked.connect(self.connect_gemini)
+        row.addWidget(bg)
+        bt3 = QPushButton("자세한 방법")
         bt3.clicked.connect(self.ai_guide)
         row.addWidget(bt3)
         bt4 = QPushButton("Claude 스킬 받기")
@@ -6854,6 +6938,94 @@ class SettingsDialog(QDialog):
 
     def ai_guide(self):
         QMessageBox.information(self, "ChatGPT·Gemini 연결 방법", AI_GUIDE)
+
+    def use_engine(self, e):
+        """고른 AI 로 바로 쓰게 (환경설정 칸도 같이 맞춰서 [확인]을 눌러도 그대로)"""
+        self.ask_engine.setCurrentIndex(max(0, self.ask_engine.findData(e)))
+        self.ask_mode.setCurrentIndex(max(0, self.ask_mode.findData("hidden")))
+        self.app.cfg["ask_engine"] = e; self.app.cfg["ask_mode"] = "hidden"
+        self.app.save_cfg()
+
+    def connect_codex(self):
+        """딸깍! ChatGPT 연결: (없으면) Node.js → Codex 설치 → ChatGPT 로그인까지 창 하나로"""
+        import subprocess
+        if self.app.codex_cli():
+            QMessageBox.information(self, "ChatGPT 연결", "Codex 는 이미 깔려 있어요! 로그인 창을 열게요.\n브라우저가 열리면 ChatGPT 계정으로 로그인만 해 주세요.")
+        ps = os.path.join(MCP_HOME, "connect_chatgpt.ps1")
+        os.makedirs(MCP_HOME, exist_ok=True)
+        script = r"""$ErrorActionPreference = 'Continue'
+$Host.UI.RawUI.WindowTitle = '꼬마 친구들 - ChatGPT 연결'
+function Fresh { $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User') + ';' + "$env:APPDATA\npm" }
+Write-Host ''
+Write-Host '  ChatGPT 연결을 시작할게요! 이 창은 끝날 때까지 그대로 두세요.' -ForegroundColor Magenta
+Write-Host ''
+Fresh
+if (-not (Get-Command codex -ErrorAction SilentlyContinue)) {
+  if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+    Write-Host '  [1/3] Node.js 설치 중... (1~3분, 설치 허용 창이 뜨면 [예])' -ForegroundColor Cyan
+    if (Get-Command winget -ErrorAction SilentlyContinue) {
+      winget install -e --id OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements --silent
+    } else {
+      Write-Host '  자동 설치가 안 되는 PC 예요. 열리는 페이지에서 Node.js (LTS) 를 깔고 이 버튼을 다시 눌러 주세요.' -ForegroundColor Yellow
+      Start-Process 'https://nodejs.org/ko/download'
+      Read-Host '  엔터를 누르면 닫혀요'; exit
+    }
+    Fresh
+  }
+  Write-Host '  [2/3] ChatGPT 연결 프로그램(Codex) 설치 중...' -ForegroundColor Cyan
+  npm install -g @openai/codex
+  Fresh
+}
+if (-not (Get-Command codex -ErrorAction SilentlyContinue)) {
+  Write-Host '  설치가 끝나지 않았어요. PC 를 한 번 다시 켠 뒤 이 버튼을 다시 눌러 주세요.' -ForegroundColor Yellow
+  Read-Host '  엔터를 누르면 닫혀요'; exit
+}
+Write-Host '  [3/3] 브라우저가 열리면 ChatGPT 계정으로 로그인해 주세요!' -ForegroundColor Cyan
+codex login
+Write-Host ''
+Write-Host '  다 됐어요! 이제 캐릭터를 따닥 눌러서 물어보세요. (5초 뒤 창이 닫혀요)' -ForegroundColor Green
+Start-Sleep 5
+"""
+        try:
+            with open(ps, "w", encoding="utf-8-sig") as f:
+                f.write(script)
+            subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps],
+                             creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0))
+        except Exception as e:
+            QMessageBox.warning(self, "ChatGPT 연결", f"연결 창을 못 열었어요: {e}\n'자세한 방법'을 보고 직접 해 주세요."); return
+        self.use_engine("codex")
+
+    def connect_gemini(self):
+        """딸깍! Gemini 연결: 키 받는 페이지 열기 → 키를 복사하면 알아서 알아채서 붙여넣고 확인"""
+        from PyQt5.QtWidgets import QInputDialog
+        import webbrowser
+        webbrowser.open("https://aistudio.google.com/apikey")
+        cb = QApplication.clipboard()
+        start = (cb.text() or "").strip()
+        dlg = QInputDialog(self)
+        dlg.setWindowTitle("Gemini 연결 (무료)")
+        dlg.setLabelText("방금 열린 구글 AI 스튜디오에서\n① 구글 계정으로 로그인 → ② 'API 키 만들기' → ③ 키 복사\n\n"
+                         "복사하면 아래 칸에 저절로 들어가요. 그다음 [OK]!")
+        dlg.setTextEchoMode(QLineEdit.Password)
+        dlg.resize(460, 160)
+        def poll():
+            t = (cb.text() or "").strip()
+            if t != start and re.fullmatch(r"[A-Za-z0-9_\-]{30,60}", t) and not dlg.textValue():
+                dlg.setTextValue(t)
+        tm = QTimer(dlg); tm.timeout.connect(poll); tm.start(500)
+        if not dlg.exec_():
+            return
+        key = dlg.textValue().strip()
+        if not key:
+            return
+        self.app.cfg["gemini_key"] = key
+        self.gemini_key.setText(key)
+        self.use_engine("gemini")
+        out, err = self.app.run_gemini("한 단어로만 대답해 줘: 안녕?")
+        if out:
+            QMessageBox.information(self, "Gemini 연결", "연결 완료! 이제 캐릭터를 따닥 눌러서 물어보세요 ♪")
+        else:
+            QMessageBox.warning(self, "Gemini 연결", f"키는 저장했는데 시험 대답이 안 왔어요.\n({err[:120]})\n키를 다시 복사해서 한 번 더 눌러 주세요.")
 
     def open_file(self, fn):
         path = os.path.join(BASE, fn)
@@ -7980,7 +8152,7 @@ class App:
                   "desktop-pet 도구(pet_status, pet_say, pet_action, pet_persona, pet_scene, pet_group_play, pet_outfit, pet_team, pet_notify, pet_music, pet_remind)로 실제로 시켜 줘. "
                   "'몇 시에 알려 줘', '몇 분 뒤에 알려 줘' 같은 부탁은 pet_remind 로 예약해 줘 (지금 시각: " + datetime.datetime.now().strftime("%Y-%m-%d %H:%M") + "). "
                   "노래를 추천해 달라거나 조건에 맞는 노래를 틀어 달라고 하면, 인터넷 검색으로 실제 유튜브 영상 링크를 찾아서(링크를 지어내지 말 것) "
-                  "pet_music 의 songs=[{title, url}] 와 name(목록 이름)으로 넘겨 저장·재생해 줘. 검색을 못 쓰면 곡 제목만 추천하고 '기타 탭에서 인터넷 검색을 켜 주면 바로 틀어 줄게'라고 말해 줘. "
+                  "pet_music 의 songs=[{title, url}] 와 name(목록 이름)으로 넘겨 저장·재생해 줘. 검색을 못 쓰면 곡 제목만 추천하고 'AI 연결 탭에서 인터넷 검색을 켜 주면 바로 틀어 줄게'라고 말해 줘. "
                   f"단, 네({lab}) 대답 말풍선은 펫 프로그램이 알아서 띄우니까 pet_say 로 {lab} 에게는 보내지 마."
                 "\n\n내 질문: " + q)
 
@@ -8050,13 +8222,13 @@ class App:
         lab = self.chars[b.char]["label"]
         engine = self.ask_engine()
         if engine == "codex" and not self.codex_cli():
-            self.force_say(b, "ChatGPT(Codex)가 안 깔려 있어요… 환경설정 → 기타 → 'ChatGPT·Gemini 설치·연결 방법'을 봐 주세요!", raw=True)
+            self.force_say(b, "ChatGPT(Codex)가 안 깔려 있어요… 환경설정 → AI 연결 → 'ChatGPT·Gemini 설치·연결 방법'을 봐 주세요!", raw=True)
             return
         if engine == "gemini" and not self.cfg.get("gemini_key"):
-            self.force_say(b, "Gemini API 키가 없어요… 환경설정 → 기타에서 키를 넣어 주세요! (구글 AI 스튜디오에서 무료로 받을 수 있어요)", raw=True)
+            self.force_say(b, "Gemini API 키가 없어요… 환경설정 → AI 연결에서 키를 넣어 주세요! (구글 AI 스튜디오에서 무료로 받을 수 있어요)", raw=True)
             return
         if engine == "claude" and not exe:
-            self.force_say(b, "Claude Code 가 안 깔려 있어요… 환경설정 → 기타에서 'Claude 창 열기'로 바꾸거나 Claude Code 를 깔아 주세요!")
+            self.force_say(b, "Claude Code 가 안 깔려 있어요… 환경설정 → AI 연결에서 'Claude 창 열기'로 바꾸거나 Claude Code 를 깔아 주세요!")
             return
         room = "_room" if self.cfg.get("ask_room", "one") == "one" else b.char   # 한 방(전원 공유) / 캐릭터마다 따로
         if getattr(self, "_ask_busy", {}).get(room):          # 같은 방에서 대답 중이면 차례 기다리기
@@ -8134,7 +8306,7 @@ class App:
                         if engine == "codex" and ("login" in low or "auth" in low or "401" in low or "sign in" in low):
                             msg = "ChatGPT 로그인이 필요해요! PowerShell 에서  codex login  을 한 번 실행해 주세요."
                         elif engine == "gemini" and ("키" in err or "key" in low):
-                            msg = "Gemini API 키를 확인해 주세요! (환경설정 → 기타)"
+                            msg = "Gemini API 키를 확인해 주세요! (환경설정 → AI 연결)"
                         elif "429" in low or "quota" in low or "limit" in low:
                             msg = f"{ename} 사용량이 잠깐 다 찼어요… 조금 뒤에 다시 물어봐 주세요!"
                         else:
@@ -9533,7 +9705,7 @@ class App:
                 return
             need, q = "files", (dlg.textValue().strip() + "\n대상 파일: \n" + plist + "\n" + rule)
         if not self.drop_allowed(need, dirs):
-            b.say("알겠어, 안 건드릴게~ (환경설정 → 기타 → 작업 권한)", 120)
+            b.say("알겠어, 안 건드릴게~ (환경설정 → AI 연결 → 작업 권한)", 120)
             return
         b.say(random.choice(DROP_LINES["start"]), 150)
         self.ask_log(f"file drop {need}: {names}")
@@ -9653,7 +9825,7 @@ class App:
         sp = ([b for b in self.buddies if b.surface] or self.buddies or [None])[0]
         if not keys:
             if sp:
-                self.force_say(sp, "브리핑 받을 관심사 키워드를 먼저 정해 줘~ (환경설정 → 기타 → 관심사 브리핑)", 8)
+                self.force_say(sp, "브리핑 받을 관심사 키워드를 먼저 정해 줘~ (환경설정 → AI 연결 → 관심사 브리핑)", 8)
             return
         exe = self.claude_cli()
         if not exe:
@@ -11503,7 +11675,7 @@ class App:
         bm.addAction("키워드·시간 설정…", lambda: self.open_settings("Claude"))
         top.addSeparator()
         self.passthru_menu(top)             # 터치 OFF · 투명도
-        # 켜고 끄는 옵션(마중·수다·커서·항상 위·수면·제자리 …)은 환경설정 '화면·움직임' / 'Claude' 탭으로 옮김
+        # 켜고 끄는 옵션(마중·수다·커서·항상 위·수면·제자리 …)은 환경설정 '화면·움직임' / 'AI 연결' 탭으로 옮김
         top.addAction("캐릭터 고르기 (받기·지우기)…", self.open_char_picker)
         top.addAction("환경설정…", self.open_settings)
         top.addAction("종료", self.qapp.quit)
