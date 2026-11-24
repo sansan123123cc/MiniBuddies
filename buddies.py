@@ -868,6 +868,20 @@ def _marian_only():
 
 USAGI_VOICE = ["하아~?", "야하!", "울라~", "우라!", "뿌르르르르르 이야하!!!!!", "우나~ 야하야하", "후응~", "우라라라!", "츠츠, 우라우라"]
 
+AI_GUIDE = ("캐릭터에게 물어보기는 Claude 말고도 ChatGPT·Gemini 로 할 수 있어요.\n\n"
+            "■ ChatGPT (ChatGPT Plus 등 구독이 있으면 추가 요금 없음)\n"
+            "1) Node.js 를 깔아요: https://nodejs.org (LTS 버전)\n"
+            "2) PowerShell 을 열고:  npm install -g @openai/codex\n"
+            "3) 이어서:  codex login   → 브라우저가 열리면 ChatGPT 계정으로 로그인\n"
+            "4) 환경설정 → 기타 → '대답해 줄 AI'를 ChatGPT 로 바꾸고 저장\n\n"
+            "■ Gemini (구독 없이 무료)\n"
+            "1) https://aistudio.google.com/apikey 에서 구글 계정으로 로그인 → 'API 키 만들기'\n"
+            "2) 받은 키를 환경설정 → 기타 → 'Gemini API 키' 칸에 붙여넣기\n"
+            "3) '대답해 줄 AI'를 Gemini 로 바꾸고 저장\n"
+            "※ 무료 키는 하루 사용량 제한이 있고, 인터넷 검색(최신 뉴스 등)은 무료 키로는 안 될 수 있어요. 그땐 검색 없이 대답해요.\n"
+            "※ 무료 키로 보낸 내용은 구글이 서비스 개선에 쓸 수 있어요. 개인 정보는 묻지 마세요.\n\n"
+            "Claude 만 되는 것: 다른 친구들에게 동작 시키기, 알림 예약, 노래 틀기, 화면 같이 보기, 파일 작업.")
+
 def usagi_only(text):
     """우사기: 원작 어록 소리만 남기기 (사람 말이 섞이면 우사기 소리로 바꿈 — 대답·검색 결과도)"""
     t = str(text).strip()
@@ -6617,19 +6631,38 @@ class SettingsDialog(QDialog):
         self.ask_dbl.setChecked(self.app.cfg.get("ask_dbl", True))
         ag.addWidget(self.ask_dbl)
         cli = self.app.claude_cli()
+        from PyQt5.QtWidgets import QLineEdit
+        er = QHBoxLayout(); er.addWidget(QLabel("대답해 줄 AI:"))
+        self.ask_engine = QComboBox()
+        self.ask_engine.addItem("Claude (Claude Code)", "claude")
+        self.ask_engine.addItem("ChatGPT (Codex, ChatGPT 구독으로)", "codex")
+        self.ask_engine.addItem("Gemini (구글 무료 API 키)", "gemini")
+        self.ask_engine.setCurrentIndex(max(0, self.ask_engine.findData(self.app.ask_engine())))
+        er.addWidget(self.ask_engine, 1); ag.addLayout(er)
         self.ask_mode = QComboBox()
-        self.ask_mode.addItem("숨겨서 바로 대답 받기 (Claude Code, 창 안 뜸)", "hidden")
-        self.ask_mode.addItem("Claude 창을 열어서 묻기", "window")
-        self.ask_mode.setCurrentIndex(max(0, self.ask_mode.findData(self.app.cfg.get("ask_mode") or ("hidden" if cli else "window"))))
+        self.ask_mode.addItem("숨겨서 바로 대답 받기 (창 안 뜸, 말풍선으로 대답)", "hidden")
+        self.ask_mode.addItem("AI 창을 열어서 묻기 (Claude·ChatGPT)", "window")
+        self.ask_mode.setCurrentIndex(max(0, self.ask_mode.findData(self.app.cfg.get("ask_mode") or ("hidden" if self.app.ask_ready() else "window"))))
         ag.addWidget(self.ask_mode)
-        ag.addWidget(QLabel("Claude Code: " + (f"찾음 ✓" if cli else "아직 없음 — PowerShell 에서  irm https://claude.ai/install.ps1 | iex")))
+        cx = self.app.codex_cli()
+        ag.addWidget(QLabel("Claude Code: " + ("찾음 ✓" if cli else "아직 없음 — PowerShell 에서  irm https://claude.ai/install.ps1 | iex")
+                            + "\nChatGPT(Codex): " + ("찾음 ✓" if cx else "아직 없음 — '설치·연결 방법'을 눌러 보세요")))
         row = QHBoxLayout()
         for lab, fn in [("Claude 연결 가이드 보기", "Claude_연결_가이드.txt"), ("Claude Code 설치하기", "INSTALL_CLAUDE_CODE.bat")]:
             bt2 = QPushButton(lab)
             bt2.clicked.connect(lambda _=False, fn=fn: self.open_file(fn))
             row.addWidget(bt2)
+        bt3 = QPushButton("ChatGPT·Gemini 설치·연결 방법")
+        bt3.clicked.connect(self.ai_guide)
+        row.addWidget(bt3)
         ag.addLayout(row)
-        from PyQt5.QtWidgets import QLineEdit
+        gr = QHBoxLayout(); gr.addWidget(QLabel("Gemini API 키:"))
+        self.gemini_key = QLineEdit(self.app.cfg.get("gemini_key", "")); self.gemini_key.setEchoMode(QLineEdit.Password)
+        self.gemini_key.setPlaceholderText("Gemini 를 쓸 때만 — 구글 AI 스튜디오에서 무료로 받은 키 붙여넣기")
+        gr.addWidget(self.gemini_key, 1)
+        gk = QPushButton("키 받으러 가기")
+        gk.clicked.connect(lambda: __import__("webbrowser").open("https://aistudio.google.com/apikey"))
+        gr.addWidget(gk); ag.addLayout(gr)
         nr = QHBoxLayout(); nr.addWidget(QLabel("캐릭터들이 나를 부르는 이름:"))
         self.my_name = QLineEdit(self.app.cfg.get("my_name", "")); self.my_name.setPlaceholderText("비우면 특별한 호칭 없이 (예: 지휘관, 선배, 주인님)")
         nr.addWidget(self.my_name); ag.addLayout(nr)
@@ -6812,6 +6845,9 @@ class SettingsDialog(QDialog):
         except Exception:
             pass
 
+    def ai_guide(self):
+        QMessageBox.information(self, "ChatGPT·Gemini 연결 방법", AI_GUIDE)
+
     def open_file(self, fn):
         path = os.path.join(BASE, fn)
         if not os.path.exists(path):
@@ -6924,6 +6960,8 @@ class SettingsDialog(QDialog):
         cfg["ask_dbl"] = self.ask_dbl.isChecked()
         cfg["ask_where"] = self.ask_where.currentData()
         cfg["ask_mode"] = self.ask_mode.currentData()
+        cfg["ask_engine"] = self.ask_engine.currentData() or "claude"
+        cfg["gemini_key"] = self.gemini_key.text().strip()
         cfg["ask_control"] = self.ask_ctl.isChecked()
         cfg["ask_web"] = self.ask_web.isChecked()
         cfg["ask_power"] = self.ask_power.currentData() or "none"
@@ -7824,6 +7862,103 @@ class App:
                 os.path.join(os.environ.get("APPDATA", ""), "npm", "claude.cmd")]
         return next((c for c in cand if c and os.path.exists(c)), None)
 
+    def codex_cli(self):
+        """설치된 ChatGPT Codex CLI(codex) 찾기"""
+        cand = [shutil.which("codex"), shutil.which("codex.cmd"), shutil.which("codex.exe"),
+                os.path.join(os.environ.get("APPDATA", ""), "npm", "codex.cmd"),
+                os.path.join(os.path.expanduser("~"), ".local", "bin", "codex.exe")]
+        return next((c for c in cand if c and os.path.exists(c)), None)
+
+    def ask_engine(self):
+        """물어보기에 쓸 AI: 고른 게 있으면 그것, 없으면 깔린 것 중에서"""
+        e = self.cfg.get("ask_engine")
+        if e in ("claude", "codex", "gemini"):
+            return e
+        if self.claude_cli():
+            return "claude"
+        if self.codex_cli():
+            return "codex"
+        return "gemini" if self.cfg.get("gemini_key") else "claude"
+
+    def ask_ready(self):
+        e = self.ask_engine()
+        return bool(self.claude_cli() if e == "claude" else self.codex_cli() if e == "codex" else self.cfg.get("gemini_key"))
+
+    def plain_prompt(self, char, q, room):
+        """ChatGPT·Gemini 용 프롬프트 (펫 조종 도구 없이 대답만) + 이 방에서 나눈 최근 이야기"""
+        lab = self.chars[char]["label"]
+        base = self.char_prompt(char, q).split("그리고 대답을 마치기 전에")[0]
+        hist = self.cfg.get("ask_hist", {}).get(room, [])[-6:]
+        h = ""
+        if hist:
+            me = self.cfg.get("my_name") or "나"
+            h = "앞에서 나눈 이야기(기억해 두고 이어서 대답해 줘):\n" + "\n".join(f"{me}: {x[1]}\n{x[0]}: {x[2]}" for x in hist) + "\n\n"
+        return (base + f"대답은 바탕화면 말풍선에 그대로 들어가니까, 마크다운·목록·그림 이모지 없이 {lab} 말투로 1~3문장(150자 이내)만 써 줘. "
+                "♪ ♥ ~ ☆ 같은 문장 기호는 이모지가 아니니까 그 캐릭터 말버릇이면 꼭 살려서 써 줘. 파일을 읽거나 고치거나 명령을 실행하지는 마. "
+                + ("최신 정보가 필요하면 인터넷 검색을 써도 돼. " if self.cfg.get("ask_web") else "")
+                + f"(지금 시각: {datetime.datetime.now():%Y-%m-%d %H:%M})\n\n" + h + "내 질문: " + q)
+
+    def run_codex(self, prompt, work):
+        """ChatGPT Codex CLI 를 창 없이 실행 → (대답, 오류)"""
+        import subprocess
+        exe = self.codex_cli()
+        if not exe:
+            return "", "codex 없음"
+        last = os.path.join(work, "codex_last.txt")
+        try:
+            os.remove(last)
+        except Exception:
+            pass
+        args = [exe, "exec", "--skip-git-repo-check", "--sandbox", "read-only", "-o", last, "-"]
+        r = subprocess.run(args, input=prompt.encode("utf-8"), capture_output=True, cwd=work, timeout=300,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        out = ""
+        try:
+            out = open(last, encoding="utf-8", errors="replace").read().strip()
+        except Exception:
+            out = r.stdout.decode("utf-8", "replace").strip()
+        err = "" if out else (r.stderr.decode("utf-8", "replace").strip()[-300:] or f"exit {r.returncode}")
+        return out, err
+
+    def run_gemini(self, prompt):
+        """Gemini API(구글 AI 스튜디오 키)로 대답 받기 → (대답, 오류). 무료 키는 검색이 안 되면 검색 없이 다시"""
+        import urllib.request, urllib.error
+        key = (self.cfg.get("gemini_key") or "").strip()
+        if not key:
+            return "", "Gemini API 키 없음"
+        models = [m for m in [self.cfg.get("gemini_model"), "gemini-3.5-flash", "gemini-3-flash-preview", "gemini-2.5-flash"] if m]
+        err = ""
+        for m in models:
+            for web in ([True, False] if self.cfg.get("ask_web") else [False]):
+                body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}]}
+                if web:
+                    body["tools"] = [{"google_search": {}}]
+                req = urllib.request.Request(
+                    f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent",
+                    data=json.dumps(body).encode("utf-8"),
+                    headers={"Content-Type": "application/json", "x-goog-api-key": key})
+                try:
+                    with urllib.request.urlopen(req, timeout=120) as r:
+                        j = json.loads(r.read().decode("utf-8"))
+                    parts = ((j.get("candidates") or [{}])[0].get("content") or {}).get("parts") or []
+                    out = "".join(p.get("text", "") for p in parts if not p.get("thought")).strip()
+                    if out:
+                        return out, ""
+                    err = "빈 대답"
+                except urllib.error.HTTPError as e:
+                    try:
+                        msg = json.loads(e.read().decode("utf-8")).get("error", {}).get("message", "")
+                    except Exception:
+                        msg = ""
+                    err = f"{e.code} {msg}"[:200]
+                    if e.code in (401, 403) and "API key" in msg:
+                        return "", "API 키가 맞지 않아요"
+                    if e.code == 404:
+                        break                                    # 없는 모델 → 다음 모델
+                except Exception as e:
+                    err = str(e)[:200]
+        return "", err
+
     def hidden_prompt(self, char, q, extra=None):
         lab = self.chars[char]["label"]
         base = self.char_prompt(char, q).split("그리고 대답을 마치기 전에")[0]
@@ -7906,7 +8041,14 @@ class App:
         import subprocess
         exe = self.claude_cli()
         lab = self.chars[b.char]["label"]
-        if not exe:
+        engine = self.ask_engine()
+        if engine == "codex" and not self.codex_cli():
+            self.force_say(b, "ChatGPT(Codex)가 안 깔려 있어요… 환경설정 → 기타 → 'ChatGPT·Gemini 설치·연결 방법'을 봐 주세요!", raw=True)
+            return
+        if engine == "gemini" and not self.cfg.get("gemini_key"):
+            self.force_say(b, "Gemini API 키가 없어요… 환경설정 → 기타에서 키를 넣어 주세요! (구글 AI 스튜디오에서 무료로 받을 수 있어요)", raw=True)
+            return
+        if engine == "claude" and not exe:
             self.force_say(b, "Claude Code 가 안 깔려 있어요… 환경설정 → 기타에서 'Claude 창 열기'로 바꾸거나 Claude Code 를 깔아 주세요!")
             return
         room = "_room" if self.cfg.get("ask_room", "one") == "one" else b.char   # 한 방(전원 공유) / 캐릭터마다 따로
@@ -7922,7 +8064,7 @@ class App:
         sess = self.cfg.get("ask_sessions", {}).get(room)
         work = os.path.join(MCP_HOME, "ask"); os.makedirs(work, exist_ok=True)
         prompt = self.hidden_prompt(b.char, q, extra)
-        shot = None if extra else self.grab_screen_for_ask(b, q, work)
+        shot = None if (extra or engine != "claude") else self.grab_screen_for_ask(b, q, work)
         if shot:
             prompt += (f" 참고로 지금 내 화면을 캡처해 뒀어: {shot} (Read 도구로 열어 보고, 화면 얘기가 나오면 그걸 보고 대답해 줘."
                        " 화면에 보이는 개인 정보는 말풍선에 그대로 옮기지 마.)")
@@ -7949,8 +8091,56 @@ class App:
         if sess:
             args += ["--resume", sess]                      # 앞에서 나눈 이야기를 기억 (한 방이면 모두의 이야기)
         self.ask_log(f"hidden ask {lab}: {q}")
+        if engine != "claude":
+            pprompt = self.plain_prompt(b.char, q, room)
+            ename = "ChatGPT" if engine == "codex" else "Gemini"
         def work_thread():
             out, err, sid = "", "", None
+            if engine != "claude":
+                try:
+                    out, err = self.run_codex(pprompt, work) if engine == "codex" else self.run_gemini(pprompt)
+                except subprocess.TimeoutExpired:
+                    err = "시간 초과"
+                except Exception as e:
+                    err = str(e)
+                self.claude_history("물어보기(" + ename + ")", lab, q, out, err)
+                def done2():
+                    self._ask_busy.pop(room, None)
+                    wait = [w for w in getattr(self, "_ask_wait", []) if w[0] in self.buddies]
+                    if wait:
+                        self._ask_wait = wait[1:]
+                        QTimer.singleShot(300, lambda w=wait[0]: self.ask_hidden(*w))
+                    else:
+                        self._ask_wait = []
+                    if out:
+                        hs = self.cfg.setdefault("ask_hist", {}).setdefault(room, [])
+                        hs.append([lab, q[:300], out[:400]]); del hs[:-6]
+                        self.save_cfg()
+                        self.chat_log(lab, q, out)
+                        self.add_aff(b, 4)
+                    if b not in self.buddies:
+                        return
+                    b.say_lock = 0
+                    if not out:
+                        self.ask_log(f"hidden error ({ename}): {err}")
+                        low = (err or "").lower()
+                        if engine == "codex" and ("login" in low or "auth" in low or "401" in low or "sign in" in low):
+                            msg = "ChatGPT 로그인이 필요해요! PowerShell 에서  codex login  을 한 번 실행해 주세요."
+                        elif engine == "gemini" and ("키" in err or "key" in low):
+                            msg = "Gemini API 키를 확인해 주세요! (환경설정 → 기타)"
+                        elif "429" in low or "quota" in low or "limit" in low:
+                            msg = f"{ename} 사용량이 잠깐 다 찼어요… 조금 뒤에 다시 물어봐 주세요!"
+                        else:
+                            msg = f"앗, 대답을 못 받았어요… ({(err or '')[:60]})"
+                        self.force_say(b, msg, raw=True)
+                        return
+                    self.ask_log(f"hidden answer {lab} ({ename}): {out[:200]}")
+                    self.force_say(b, out[:300] + ("…" if len(out) > 300 else ""))
+                    b.set("happy", 60) if b.surface else None
+                    if extra and extra.get("done"):
+                        extra["done"](out)
+                self.uiq.put(done2)
+                return
             try:
                 r = subprocess.run(args, capture_output=True, cwd=work, timeout=(600 if power != "none" else 240),
                                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
@@ -8018,8 +8208,9 @@ class App:
             dlg = QInputDialog()
             dlg.setWindowFlags(dlg.windowFlags() | Qt.WindowStaysOnTopHint)
             dlg.setWindowTitle(f"{lab}에게 물어보기")
-            hidden = (self.cfg.get("ask_mode") or ("hidden" if self.claude_cli() else "window")) == "hidden"
-            dlg.setLabelText(f"{lab}에게 물어볼 말 " + ("(대답은 말풍선으로 와요)" if hidden else "(Claude 창이 열려요)"))
+            eng = self.ask_engine()
+            hidden = eng == "gemini" or (self.cfg.get("ask_mode") or ("hidden" if self.ask_ready() else "window")) == "hidden"
+            dlg.setLabelText(f"{lab}에게 물어볼 말 " + ("(대답은 말풍선으로 와요)" if hidden else "(ChatGPT 창이 열려요)" if eng == "codex" else "(Claude 창이 열려요)"))
             dlg.resize(460, 120)
             g = b.scr()
             dlg.move(int(max(g.left(), min(g.right() - 480, b.cx - 230))), int(max(g.top(), b.fy - 160)))
@@ -8028,11 +8219,15 @@ class App:
             q = dlg.textValue().strip()
             if not q:
                 return
-            mode = self.cfg.get("ask_mode") or ("hidden" if self.claude_cli() else "window")
-            if mode == "hidden":
+            if hidden:
                 self.ask_hidden(b, q)
                 return
             enc = urllib.parse.quote(self.char_prompt(b.char, q), safe="")
+            if eng == "codex":                               # ChatGPT 창으로
+                QDesktopServices.openUrl(QUrl.fromEncoded(("https://chatgpt.com/?q=" + urllib.parse.quote(self.char_prompt(b.char, q).split("그리고 대답을 마치기 전에")[0] + "\n\n내 질문: " + q, safe="")).encode("ascii")))
+                if b in self.buddies:
+                    b.say("ChatGPT 한테 물어보고 올게~", 150)
+                return
             ok = False
             if self.cfg.get("ask_where", "app") == "app":
                 ok = QDesktopServices.openUrl(QUrl.fromEncoded(("claude://claude.ai/new?q=" + enc).encode("ascii")))
