@@ -6130,6 +6130,9 @@ class SettingsDialog(QDialog):
         bt.clicked.connect(go)
         f.addRow("", bt)
         f.addRow("", self.upd_lbl)
+        bc = QPushButton("캐릭터 고르기 (쓰는 캐릭터만 받기·안 쓰는 캐릭터 지우기)…")
+        bc.clicked.connect(self.app.open_char_picker)
+        f.addRow("", bc)
         note = QLabel("받는 건 바뀐 파일뿐이고, settings.json(내 설정)·대화기록은 그대로 둬요.\n"
                       "업데이트가 끝나면 펫이 잠깐 사라졌다가 다시 켜져요.")
         note.setWordWrap(True)
@@ -6376,6 +6379,65 @@ def upd_get(repo, rel, token, ref="main", timeout=30):
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read()
 
+# ── 캐릭터 골라 받기: update.json 의 "chars" (없으면 = 전부 받는 예전 방식) ──
+def upd_group(rel):
+    """파일 → 어느 캐릭터 것인지 (chars/ 밖이면 None = 늘 받는 본체, '@squad:<그룹>' = 합동 장면)"""
+    if not rel.startswith("chars/"):
+        return None
+    p = rel.split("/")
+    if len(p) < 3:
+        return None
+    d = p[1]
+    if d.startswith("_scenes_"):
+        return "@squad:" + d[8:]
+    if d == "_doro_motion":
+        return "dorothy"
+    if d.startswith("_"):
+        return None
+    return d.split("@")[0]
+
+def upd_selected():
+    """None = 전부, 아니면 받을 캐릭터 이름 set"""
+    v = upd_load("update.json").get("chars")
+    return None if v is None else set(v)
+
+def upd_wanted(rel, sel):
+    if sel is None:
+        return True
+    g = upd_group(rel)
+    if g is None:
+        return True
+    if g.startswith("@squad:"):                      # 합동 장면은 그 그룹 멤버를 다 골랐을 때만
+        mem = SQUADS.get(g[7:], [])
+        return bool(mem) and all(m in sel for m in mem)
+    return g in sel
+
+def upd_all_chars(files):
+    return sorted({g for g in map(upd_group, files) if g and not g.startswith("@")})
+
+def upd_installed():
+    """지금 깔려 있는 캐릭터 (그림 0.png 가 있는 폴더 기준)"""
+    out = set()
+    try:
+        for d in os.listdir(upd_path("chars")):
+            if not d.startswith("_") and os.path.exists(os.path.join(upd_path("chars"), d, "0.png")):
+                out.add(d.split("@")[0])
+    except OSError:
+        pass
+    return out
+
+def upd_fetch_manifest():
+    """저장소의 최신 manifest (버전 비교 없이). 못 받으면 내 manifest"""
+    local, cfg = upd_load("manifest.json"), upd_load("update.json")
+    repo = cfg.get("repo") or local.get("repo")
+    branch = cfg.get("branch") or local.get("branch") or "main"
+    try:
+        remote = json.loads(upd_get(repo, "manifest.json", cfg.get("token"), branch).decode("utf-8"))
+        remote.setdefault("repo", repo); remote.setdefault("branch", branch)
+        return remote
+    except Exception:
+        return local if local.get("files") else None
+
 def upd_check():
     """(새 manifest 또는 None, 안내 문구)"""
     import urllib.error
@@ -6411,9 +6473,12 @@ def upd_apply(remote, progress=None):
     from concurrent.futures import ThreadPoolExecutor
     token = upd_load("update.json").get("token")
     files = remote.get("files", {})
+    sel = upd_selected()
     need = []
     for rel, sha in files.items():
         if rel in UPD_KEEP or rel.startswith("..") or os.path.isabs(rel):
+            continue
+        if not upd_wanted(rel, sel):                   # 고르지 않은 캐릭터는 안 받음
             continue
         if upd_sha(upd_path(rel)) != sha:
             need.append(rel)
@@ -6478,12 +6543,193 @@ def upd_apply(remote, progress=None):
                 os.remove(upd_path(rel))
             except OSError:
                 pass
+    if sel is not None:                                # 고르기에서 뺀 캐릭터는 폴더째 지움
+        try:
+            for d in os.listdir(upd_path("chars")):
+                g = upd_group("chars/%s/x" % d)
+                if g and not upd_wanted("chars/%s/x" % d, sel):
+                    shutil.rmtree(os.path.join(upd_path("chars"), d), ignore_errors=True)
+        except OSError:
+            pass
     shutil.rmtree(stage, ignore_errors=True)
     tmp = upd_path("manifest.json.tmp")
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(remote, f, ensure_ascii=False, indent=0)
     os.replace(tmp, upd_path("manifest.json"))
     return len(need)
+
+
+# ── 캐릭터 고르기 창 (다이어트: 쓰는 캐릭터만 받기 · 안 쓰는 캐릭터 지우기) ──
+def upd_char_dirs(files):
+    """캐릭터 → 대표 폴더 (기본 의상 폴더 우선)"""
+    dirs = {}
+    for rel in files:
+        if rel.endswith("/0.png") and rel.startswith("chars/"):
+            d = rel.split("/")[1]
+            if d.startswith("_"):
+                continue
+            c = d.split("@")[0]
+            rank = 0 if d == c else (1 if d.endswith("@basic") else 2)
+            if c not in dirs or rank < dirs[c][0]:
+                dirs[c] = (rank, d)
+    return {c: v[1] for c, v in dirs.items()}
+
+
+class CharPicker(QDialog):
+    """프랜차이즈 → 그룹 → 캐릭터 그림 타일. 체크한 캐릭터만 받고, 뺀 캐릭터는 지움"""
+    def __init__(self, files, chosen, first=False):
+        super().__init__()
+        from PyQt5.QtWidgets import QScrollArea, QToolButton
+        from PyQt5.QtCore import QSize
+        self.setWindowTitle("캐릭터 고르기")
+        self.resize(760, 640)
+        self.files = files
+        self.chars = upd_all_chars(files)
+        self.dirs = upd_char_dirs(files)
+        self.installed = upd_installed()
+        self.names = upd_load("_thumbs/names.json") if os.path.exists(upd_path("_thumbs/names.json")) else {}
+        self.btn = {}
+        v = QVBoxLayout(self)
+        head = QLabel(("처음 오셨네요! 데리고 놀 캐릭터를 골라 주세요. 고른 캐릭터만 받아서 가볍게 시작해요.\n"
+                       if first else "") + "체크한 캐릭터만 받아요. 체크를 풀면 그 캐릭터(스킨 포함)는 컴퓨터에서 지워져요. 나중에 언제든 바꿀 수 있어요.")
+        head.setWordWrap(True)
+        v.addWidget(head)
+        sc = QScrollArea(); sc.setWidgetResizable(True)
+        body = QWidget(); bv = QVBoxLayout(body)
+        used = set()
+        groups = []
+        for fr, sqs in FRANCHISE:
+            for sq in sqs:
+                mem = [c for c in SQUADS.get(sq, []) if c in self.chars and c not in used]
+                used.update(mem)
+                if mem:
+                    groups.append((fr, SQUAD_NAME.get(sq, sq), mem))
+        rest = [c for c in self.chars if c not in used]
+        if rest:
+            groups.append(("기타", "", rest))
+        last_fr = None
+        for fr, sqn, mem in groups:
+            if fr != last_fr:
+                t = QLabel("<b>%s</b>" % fr); bv.addWidget(t); last_fr = fr
+            box = QGroupBox(sqn or " ")
+            g = QGridLayout(box); g.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+            for i, c in enumerate(mem):
+                b = QToolButton(); b.setCheckable(True); b.setChecked(c in chosen)
+                b.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+                b.setIconSize(QSize(96, 96)); b.setFixedSize(112, 154)
+                b.setStyleSheet("QToolButton{border:2px solid #eee;border-radius:10px;background:#fff}"
+                                "QToolButton:checked{border:2px solid #e86a9a;background:#fff0f6}")
+                b.toggled.connect(lambda _=None: self.sync())
+                self.btn[c] = b
+                g.addWidget(b, i // 5, i % 5)
+            bv.addWidget(box)
+        bv.addStretch(1)
+        sc.setWidget(body); v.addWidget(sc, 1)
+        self.sum = QLabel(""); v.addWidget(self.sum)
+        h = QHBoxLayout()
+        ba = QPushButton("전부 고르기"); ba.clicked.connect(lambda: [b.setChecked(True) for b in self.btn.values()])
+        bn = QPushButton("전부 풀기"); bn.clicked.connect(lambda: [b.setChecked(False) for b in self.btn.values()])
+        h.addWidget(ba); h.addWidget(bn); h.addStretch(1)
+        self.ok = QPushButton("받기 시작" if first else "적용 (받기·지우기)")
+        self.ok.clicked.connect(self.accept)
+        cancel = QPushButton("닫기" if first else "취소"); cancel.clicked.connect(self.reject)
+        h.addWidget(cancel); h.addWidget(self.ok)
+        v.addLayout(h)
+        self.refresh_tiles()
+        self.sync()
+        self.need = [c for c in self.chars if not os.path.exists(upd_path("_thumbs/%s.png" % c)) or c not in self.names]
+        if self.need:                                      # 안 깔린 캐릭터 그림·이름은 조금씩 받아 옴 (캐시)
+            threading.Thread(target=self.fetch_thumbs, daemon=True).start()
+            self.tt = QTimer(self); self.tt.timeout.connect(self.refresh_tiles); self.tt.start(700)
+
+    def fetch_thumbs(self):
+        cfg, man = upd_load("update.json"), upd_load("manifest.json")
+        repo = cfg.get("repo") or man.get("repo"); br = cfg.get("branch") or man.get("branch") or "main"
+        os.makedirs(upd_path("_thumbs"), exist_ok=True)
+        for c in list(self.need):
+            d = self.dirs.get(c)
+            if not d:
+                continue
+            try:
+                tp = upd_path("_thumbs/%s.png" % c)
+                if not os.path.exists(tp):
+                    src = upd_path("chars/%s/0.png" % d)
+                    data = open(src, "rb").read() if os.path.exists(src) else upd_get(repo, "chars/%s/0.png" % d, cfg.get("token"), br)
+                    with open(tp + ".tmp", "wb") as f:
+                        f.write(data)
+                    os.replace(tp + ".tmp", tp)
+                if c not in self.names:
+                    src = upd_path("chars/%s/name.txt" % d)
+                    raw = open(src, "rb").read() if os.path.exists(src) else upd_get(repo, "chars/%s/name.txt" % d, cfg.get("token"), br)
+                    self.names[c] = raw.decode("utf-8", "ignore").strip() or c
+            except Exception:
+                pass
+        try:
+            with open(upd_path("_thumbs/names.json"), "w", encoding="utf-8") as f:
+                json.dump(self.names, f, ensure_ascii=False)
+        except Exception:
+            pass
+        self.need = []
+
+    def refresh_tiles(self):
+        from PyQt5.QtGui import QIcon
+        for c, b in self.btn.items():
+            d = self.dirs.get(c, c)
+            nm = self.names.get(c)
+            if not nm:
+                try:
+                    nm = open(upd_path("chars/%s/name.txt" % d), encoding="utf-8").read().strip()
+                except Exception:
+                    nm = c
+            b.setText(nm + ("\n깔려 있음" if c in self.installed else ""))
+            for tp in (upd_path("chars/%s/0.png" % d), upd_path("_thumbs/%s.png" % c)):
+                if os.path.exists(tp):
+                    b.setIcon(QIcon(QPixmap(tp))); break
+        if getattr(self, "tt", None) and not self.need:
+            self.tt.stop()
+
+    def chosen(self):
+        return {c for c, b in self.btn.items() if b.isChecked()}
+
+    def sync(self):
+        ch = self.chosen()
+        add = [c for c in ch if c not in self.installed]
+        rem = [c for c in self.installed if c not in ch and c in self.btn]
+        self.sum.setText("고른 캐릭터 %d명 · 새로 받기 %d명 · 지우기 %d명" % (len(ch), len(add), len(rem)))
+        self.ok.setEnabled(bool(ch))
+
+
+def first_run_pick():
+    """가벼운 설치(캐릭터 없음)로 처음 켰을 때: 고르기 창 → 고른 캐릭터만 받고 시작"""
+    if not os.path.exists(upd_path("update.json")) or upd_installed():
+        return
+    from PyQt5.QtWidgets import QProgressDialog
+    qa = QApplication.instance() or QApplication(sys.argv)
+    remote = upd_fetch_manifest()
+    if not remote or not remote.get("files"):
+        QMessageBox.warning(None, "꼬마 친구들", "캐릭터 목록을 못 받았어요. 인터넷 연결을 확인하고 다시 켜 주세요.")
+        sys.exit(0)
+    dlg = CharPicker(remote["files"], set(), first=True)
+    if not dlg.exec_():
+        sys.exit(0)
+    uc = upd_load("update.json"); uc["chars"] = sorted(dlg.chosen()); upd_save_cfg(uc)
+    pd = QProgressDialog("고른 캐릭터 받는 중…", None, 0, 100); pd.setWindowTitle("꼬마 친구들"); pd.setMinimumDuration(0)
+    st = {"done": 0, "all": 1, "err": None, "end": False}
+
+    def work():
+        try:
+            upd_apply(remote, progress=lambda d, a: st.update(done=d, all=max(1, a)))
+        except Exception as e:
+            st["err"] = str(e)
+        st["end"] = True
+    threading.Thread(target=work, daemon=True).start()
+    while not st["end"]:
+        pd.setValue(int(st["done"] * 100 / st["all"])); pd.setLabelText("고른 캐릭터 받는 중… %d / %d" % (st["done"], st["all"]))
+        qa.processEvents(); time.sleep(0.05)
+    pd.close()
+    if st["err"]:
+        QMessageBox.warning(None, "꼬마 친구들", "받다가 멈췄어요: %s\n다시 켜면 받던 데서 이어 받아요." % st["err"])
+        sys.exit(0)
 
 
 # ── Claude 연결(MCP) 다리: 127.0.0.1 에서만 명령을 받음 → pet_mcp.py 가 Claude 데스크톱과 이어 줌 ──
@@ -6562,7 +6808,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
 
 class App:
     def __init__(self):
-        self.qapp = QApplication(sys.argv)
+        self.qapp = QApplication.instance() or QApplication(sys.argv)   # 처음 고르기 창이 먼저 만들었으면 그걸 씀
         try:                                   # 창 아이콘 (엘리시아)
             from PyQt5.QtGui import QIcon
             ip = os.path.join(BASE, "icon.ico")
@@ -7259,6 +7505,42 @@ class App:
             return
         if upd_load("update.json").get("auto", True):
             self.check_update(quiet=True)
+
+    def open_char_picker(self):
+        """메뉴 '캐릭터 고르기': 쓰는 캐릭터만 남기고 나머지는 지우기 / 새로 받기"""
+        if not os.path.exists(upd_path("update.json")):
+            QMessageBox.information(None, "캐릭터 고르기", "설치 프로그램으로 깐 펫에서만 쓸 수 있어요.")
+            return
+        man = upd_load("manifest.json")
+        sel = upd_selected()
+        cur = upd_installed() if sel is None else sel
+        dlg = CharPicker(man.get("files", {}), cur)
+        if not dlg.exec_():
+            return
+        new = dlg.chosen()
+        if new == cur and sel is not None:
+            return
+        uc = upd_load("update.json"); uc["chars"] = sorted(new); upd_save_cfg(uc)
+        if self.upd_busy:
+            return
+        self.upd_busy = True
+        who = self.buddies[0] if self.buddies else None
+        if who:
+            self.force_say(who, "고른 캐릭터로 바꾸는 중이야~ 잠깐만!", 6)
+
+        def work():
+            try:
+                remote = upd_fetch_manifest()
+                n = upd_apply(remote)
+                self.upd_msg = "캐릭터 고르기 완료 (받은 파일 %d개)" % n
+                self.ask_log("chars: " + self.upd_msg)
+                self.uiq.put(lambda: QTimer.singleShot(1500, self.restart_self))
+            except Exception as e:
+                self.upd_msg = "캐릭터 받기 실패: %s" % e
+                self.uiq.put(lambda: self.buddies and self.force_say(random.choice(self.buddies), self.upd_msg, 8))
+            finally:
+                self.upd_busy = False
+        threading.Thread(target=work, daemon=True).start()
 
     def check_update(self, quiet=False, done_cb=None):
         """백그라운드에서 확인 → 새 버전이면 받아서 교체 → 펫 다시 켜기"""
@@ -10220,6 +10502,7 @@ class App:
         top.addSeparator()
         self.passthru_menu(top)             # 터치 OFF · 투명도
         # 켜고 끄는 옵션(마중·수다·커서·항상 위·수면·제자리 …)은 환경설정 '화면·움직임' / 'Claude' 탭으로 옮김
+        top.addAction("캐릭터 고르기 (받기·지우기)…", self.open_char_picker)
         top.addAction("환경설정…", self.open_settings)
         top.addAction("종료", self.qapp.quit)
         def _menus(mn, seen, par=None, act=None):
@@ -10300,6 +10583,7 @@ class App:
             self.tray = QSystemTrayIcon(icon)
             self.tray.setToolTip(APP_NAME)
             tm = QMenu()
+            tm.addAction("캐릭터 고르기 (받기·지우기)…", self.open_char_picker)
             tm.addAction("환경설정…", self.open_settings)
             self.passthru_tray(tm)
             st = tm.addAction("한 자리에 있기")
@@ -13512,4 +13796,5 @@ except Exception as _e:
 
 
 if __name__ == "__main__":
+    first_run_pick()
     App().run()
