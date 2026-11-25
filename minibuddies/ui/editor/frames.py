@@ -12,6 +12,7 @@ from minibuddies.ui.window_order import run_native_dialog
 FRAME_NAMES = {0: "기본 자세", 1: "걷기", 2: "걷기", 3: "걷기", 4: "구르기", 5: "떨어지기", 6: "착지", 7: "잠자기",
                8: "달리기", 9: "달리기", 10: "점프", 11: "환호", 12: "손 흔들기", 13: "매달리기", 14: "올라가기",
                15: "먹기", 16: "울기", 17: "살짝 보기", 18: "걸터앉기", 19: "하품"}
+RECOMMENDED_FRAMES = frozenset((1, 2, 3, 5, 6, 7, 10))
 
 
 def read_numbered_images(files):
@@ -54,7 +55,11 @@ class CharacterFrames(QWidget):
         body.addWidget(self.list, 1)
         body.addLayout(side)
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("0번은 기본 자세예요. PNG는 투명 배경 256×256로 준비하세요."))
+        guide = QLabel("필수 · 기본 자세 0번 (투명 배경 256×256 PNG)\n"
+                       "권장 · 걷기 1–3번, 낙하 5번, 착지 6번, 잠자기 7번, 점프 10번\n"
+                       "기본 동작에서 빠진 프레임은 등록된 포즈로 대체돼요.")
+        guide.setWordWrap(True)
+        layout.addWidget(guide)
         layout.addLayout(form)
         layout.addLayout(tools)
         layout.addLayout(body, 1)
@@ -66,7 +71,9 @@ class CharacterFrames(QWidget):
         self.list.clear()
         for number in self.numbers:
             self.list.addItem(f"{number} · {FRAME_NAMES[number]}" if number in FRAME_NAMES else str(number))
-        self.summary.setText(f"프레임 {len(self.numbers)}장" + (" · 기본 자세 필요" if 0 not in self.numbers else ""))
+        required = "0번 등록 완료" if 0 in self.numbers else "필수 0번 필요"
+        recommended = len(RECOMMENDED_FRAMES.intersection(self.numbers))
+        self.summary.setText(f"등록 {len(self.numbers)}장 · {required} · 권장 {recommended}/{len(RECOMMENDED_FRAMES)}장")
         self.list.setCurrentRow(self.numbers.index(selected) if selected in self.numbers else 0)
         if not self.numbers:
             self.preview.display(None)

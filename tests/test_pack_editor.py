@@ -67,11 +67,13 @@ class PackEditorIntegrationTest(unittest.TestCase):
         editor.author.setText("제작자")
         editor.description.setPlainText("별빛을 주고받는 테스트 캐릭터")
         self.assertTrue(editor.tabs.isTabVisible(1))
+        self.assertIn("필수 0번 필요", editor.frames.summary.text())
         artwork = make_png(directory / "0.png", "#7b75ca")
         with patch.object(QFileDialog, "getOpenFileName", return_value=(str(directory / "0.png"), "")):
             editor.frames.add_image()
         self.assertEqual(editor.project.frames[0], artwork)
         editor.frames.store({7: make_png(directory / "7.png", "#277dce")}, 7)
+        self.assertIn("0번 등록 완료 · 권장 1/7장", editor.frames.summary.text())
 
         def edit_solo(rule):
             rule.name.setText("인사하기")
