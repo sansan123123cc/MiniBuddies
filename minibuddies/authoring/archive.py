@@ -8,11 +8,13 @@ from tempfile import TemporaryDirectory
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
 
 from minibuddies.authoring.project import (
-    ASSET, FRAME_LIMIT, IMAGE_LIMIT, JSON_LIMIT, Project, materialize, validate_id, validate_text,
+    ASSET, FRAME_LIMIT, ID, IMAGE_LIMIT, JSON_LIMIT, SKIN_LIMIT, Project, Skin, materialize,
+    skin_details, validate_id, validate_skin_id, validate_text,
 )
 
 EXTENSION = ".mbpack"
 CHARACTER_FRAME = re.compile(r"character/(0|[1-9][0-9]{0,3})\.png")
+SKIN_FILE = re.compile(rf"skins/({ID.pattern})/((0|[1-9][0-9]{{0,3}})\.png|meta\.json|name\.txt)")
 CONTROL_FILES = {"pack.json", "plugin.json", "preview.png", "character/meta.json", "character/name.txt"}
 MAX_SIZE = 128 * 1024 * 1024
 
@@ -20,12 +22,15 @@ MAX_SIZE = 128 * 1024 * 1024
 def index(archive):
     entries = archive.infolist()
     names = set()
-    if len(entries) > FRAME_LIMIT + 70 or sum(entry.file_size for entry in entries) > MAX_SIZE:
+    if len(entries) > (FRAME_LIMIT + 2) * (SKIN_LIMIT + 1) + 68 or sum(entry.file_size for entry in entries) > MAX_SIZE:
         raise ValueError("팩의 파일 수 또는 압축 해제 크기가 제한을 넘었어요.")
     for entry in entries:
         name = entry.filename
-        if name not in CONTROL_FILES and not CHARACTER_FRAME.fullmatch(name) and not ASSET.fullmatch(name):
+        skin = SKIN_FILE.fullmatch(name)
+        if name not in CONTROL_FILES and not CHARACTER_FRAME.fullmatch(name) and not ASSET.fullmatch(name) and not skin:
             raise ValueError(f"지원하지 않는 팩 경로예요. {name}")
+        if skin:
+            validate_skin_id(skin[1])
         if name != entry.orig_filename or name in names or entry.flag_bits & 1 or entry.compress_type not in (ZIP_DEFLATED, ZIP_STORED):
             raise ValueError("중복 파일이 있거나 지원하지 않는 압축 방식이에요.")
         if entry.file_size > (IMAGE_LIMIT if name.endswith(".png") else JSON_LIMIT):
@@ -42,8 +47,19 @@ def read_info(archive, names):
             or type(info.get("version")) is not int or info["version"] != 1):
         raise ValueError("지원하지 않는 MiniBuddies 팩 버전이에요.")
     validate_id(info.get("id"))
-    if info.get("kind") not in ("plugin", "character"):
+    kind = info.get("kind")
+    if kind not in ("plugin", "character", "skin"):
         raise ValueError("지원하지 않는 팩 종류예요.")
+    declared_skins = skin_details(info.get("skins", []))
+    if kind == "skin":
+        validate_id(info.get("target"))
+        if not declared_skins:
+            raise ValueError("스킨 팩에 스킨 목록이 없어요.")
+    if kind == "plugin" and declared_skins:
+        raise ValueError("플러그인 팩에는 스킨을 넣을 수 없어요.")
+    actual_skins = {match[1] for name in names if (match := SKIN_FILE.fullmatch(name))}
+    if actual_skins != set(declared_skins):
+        raise ValueError("팩의 스킨 목록과 파일이 일치하지 않아요.")
     for field, size in (("name", 80), ("author", 80), ("description", 2000)):
         validate_text(info.get(field, ""), size, field, required=field == "name")
     for field, maximum in (("actions", 24), ("interactions", 16), ("frames", FRAME_LIMIT)):
@@ -69,6 +85,8 @@ def load_archive(path):
         names = index(archive)
         info = read_info(archive, names)
         project = Project(info["kind"], info["id"], info["name"], info.get("author", ""), info.get("description", ""))
+        project.target = info.get("target", "") if project.kind == "skin" else ""
+        project.skins = {skin["id"]: Skin(skin["name"]) for skin in info.get("skins", [])}
         project.cover = archive.read("preview.png") if info.get("preview") else None
         if "plugin.json" in names:
             project.rules = json.loads(archive.read("plugin.json"))
@@ -76,11 +94,15 @@ def load_archive(path):
                 raise ValueError("동작 파일 형식을 확인해 주세요.")
         project.assets = {name: archive.read(name) for name in sorted(names) if ASSET.fullmatch(name)}
         project.frames = {int(match.group(1)): archive.read(name) for name in names if (match := CHARACTER_FRAME.fullmatch(name))}
-    if (project.kind == "plugin" and project.frames) or (project.kind == "character" and 0 not in project.frames):
+        for name in names:
+            if (skin := SKIN_FILE.fullmatch(name)) and skin[3] is not None:
+                project.skins[skin[1]].frames[int(skin[3])] = archive.read(name)
+    if (project.kind != "character" and project.frames) or (project.kind == "character" and 0 not in project.frames):
         raise ValueError("팩의 종류와 캐릭터 프레임 구성이 맞지 않아요.")
     with TemporaryDirectory(prefix="mbpack-check-") as directory:
         actual = materialize(project, Path(directory) / project.id)
-    if any(actual[field] != info[field] for field in ("actions", "interactions", "frames")):
+    if (any(actual[field] != info[field] for field in ("actions", "interactions", "frames"))
+            or skin_details(actual.get("skins", [])) != skin_details(info.get("skins", []))):
         raise ValueError("팩의 미리보기 정보와 실제 내용이 일치하지 않아요.")
     return project
 

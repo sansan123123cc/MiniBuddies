@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QApplication
-from minibuddies.authoring.installed import load_characters
+from minibuddies.authoring.installed import load_content, mount_skins
 from minibuddies.catalog import (
     BUBBLE_PX,
     OUTFIT_NAME,
@@ -111,6 +111,11 @@ class App(
             if "@" in name:
                 base, of = name.split("@", 1)
                 self.outfits.setdefault(base, {})[of] = self.chars.pop(name)
+        self.content_root = Path(BASE) / "user-packs"
+        custom, authored_skins = load_content(self.content_root, set(self.chars) | set(self.outfits), _crash_write)
+        self.chars.update(custom)
+        for base, skins in authored_skins.items():
+            mount_skins(self.chars, self.outfits, base, skins)
         for base in self.outfits:                # 맨 폴더(이름만)는 '기본 의상'으로 묶음
             if self.chars.get(base) and "basic" not in self.outfits[base]:
                 self.outfits[base]["basic"] = self.chars[base]
@@ -119,9 +124,6 @@ class App(
             self.outfits[base] = {o: ofs[o] for o in order}
             self.chars[base] = None                      # 설정을 읽은 뒤 채움
         self.outfit = {}
-        self.content_root = Path(BASE) / "user-packs"
-        custom = load_characters(self.content_root, self.chars, _crash_write)
-        self.chars.update(custom)
         # 한 번에 한 캐릭터만 (실행할 때 이름을 넘기면 그 캐릭터: buddies.py monkey)
         arg = sys.argv[1] if len(sys.argv) > 1 else ""
         try:                                   # roster.txt 가 있으면 그 명단이 우선 (업데이트로 새 캐릭터가 들어오면 여기만 바뀜)

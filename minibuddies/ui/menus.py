@@ -166,7 +166,8 @@ class AppMenus:
         if len(ofs) > 1:                             # 옷 갈아입기는 우클릭 바로 아래 (한 번에 고르게)
             om = top.addMenu(f"{lab} 모습 바꾸기" if who.char in TRANSFORM else f"{lab} 옷 갈아입기")
             for of in ofs:
-                a = om.addAction(OUTFIT_NAME.get(of, of), lambda of=of: self.set_outfit(who.char, of))
+                a = om.addAction(self.outfit_label(who.char, of))
+                a.triggered.connect(lambda _checked, key=of: self.set_outfit(who.char, key))
                 a.setCheckable(True); a.setChecked(self.outfit.get(who.char) == of)
         wm = QMenu(f"{lab}이랑 놀기")              # 이 아이 전용 동작·이벤트는 한 칸 안으로
         self.plugin_menu(wm, who)

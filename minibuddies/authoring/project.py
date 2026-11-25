@@ -12,8 +12,15 @@ ID = re.compile(r"[a-z0-9][a-z0-9_-]{0,47}")
 ASSET = re.compile(r"assets/[a-f0-9]{24}\.png")
 IMAGE_LIMIT = 1024 * 1024
 FRAME_LIMIT = 256
+SKIN_LIMIT = 8
 JSON_LIMIT = 64 * 1024
 RESERVED = {"con", "prn", "aux", "nul", *(f"{name}{i}" for name in ("com", "lpt") for i in range(1, 10))}
+
+
+@dataclass
+class Skin:
+    name: str
+    frames: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -27,6 +34,8 @@ class Project:
     assets: dict = field(default_factory=dict)
     frames: dict = field(default_factory=dict)
     cover: bytes | None = None
+    target: str = ""
+    skins: dict = field(default_factory=dict)
 
     def add_image(self, data):
         key = f"assets/{sha256(data).hexdigest()[:24]}.png"
@@ -34,8 +43,9 @@ class Project:
         return key
 
     def thumbnail(self):
-        return self.cover or self.frames.get(0) or next((self.assets[step["file"]] for step in image_steps(self.rules)
-                                                        if step["file"] in self.assets), None)
+        return (self.cover or self.frames.get(0)
+                or next((skin.frames[0] for skin in self.skins.values() if 0 in skin.frames), None)
+                or next((self.assets[step["file"]] for step in image_steps(self.rules) if step["file"] in self.assets), None))
 
 
 def sections(data, key):
@@ -63,10 +73,33 @@ def validate_id(key):
     return key
 
 
+def validate_skin_id(key):
+    key = validate_id(key)
+    if key == "basic":
+        raise ValueError("basic은 캐릭터의 기본 모습에 사용하는 ID예요.")
+    return key
+
+
 def validate_text(value, length, field, *, required=False):
     if not isinstance(value, str) or len(value) > length or (required and not value.strip()):
         raise ValueError(f"{field}을(를) {length}자 이내로 입력하세요.")
     return value
+
+
+def skin_details(entries):
+    if not isinstance(entries, list) or len(entries) > SKIN_LIMIT:
+        raise ValueError(f"스킨 목록에는 최대 {SKIN_LIMIT}개까지 넣을 수 있어요.")
+    results = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ValueError("스킨 정보 형식을 확인해 주세요.")
+        key = validate_skin_id(entry.get("id"))
+        name = validate_text(entry.get("name"), 80, "스킨 이름", required=True)
+        count = entry.get("frames")
+        if key in results or type(count) is not int or not 1 <= count <= FRAME_LIMIT:
+            raise ValueError("스킨 ID가 중복됐거나 프레임 개수가 올바르지 않아요.")
+        results[key] = {"id": key, "name": name, "frames": count}
+    return results
 
 
 def json_file(path, value):
@@ -94,34 +127,50 @@ def write_image(path, data):
 
 def metadata(project):
     kind = project.kind
-    if kind not in ("character", "plugin"):
+    if kind not in ("character", "plugin", "skin"):
         raise ValueError("지원하는 팩 종류가 아니에요.")
-    return {"format": "minibuddies-pack", "version": 1, "id": validate_id(project.id), "kind": kind,
+    info = {"format": "minibuddies-pack", "version": 1, "id": validate_id(project.id), "kind": kind,
             "name": validate_text(project.name, 80, "이름", required=True),
             "author": validate_text(project.author, 80, "제작자"),
             "description": validate_text(project.description, 2000, "설명"),
             "actions": len(sections(project.rules, "actions")), "interactions": len(sections(project.rules, "interactions")),
             "frames": len(project.frames), "preview": "preview.png" if project.thumbnail() else None}
+    if project.skins:
+        info["skins"] = list(skin_details([
+            {"id": key, "name": skin.name, "frames": len(skin.frames)} for key, skin in project.skins.items()
+        ]).values())
+    if kind == "skin":
+        info["target"] = validate_id(project.target)
+        if not project.skins:
+            raise ValueError("스킨 팩에는 스킨을 하나 이상 추가해야 해요.")
+    return info
+
+
+def write_sprite_set(directory, name, frames):
+    if 0 not in frames or len(frames) > FRAME_LIMIT:
+        raise ValueError(f"{name}에 기본 자세 0번이 필요하고, 프레임은 최대 {FRAME_LIMIT}장이에요.")
+    bounds = {}
+    for number, data in sorted(frames.items()):
+        if type(number) is not int or not 0 <= number <= 9999:
+            raise ValueError("프레임 번호는 0~9999 사이여야 해요.")
+        bounds[str(number)] = write_image(directory / f"{number}.png", data)
+    json_file(directory / "meta.json", {"cell": 256, "frames": bounds})
+    (directory / "name.txt").write_text(name + "\n", encoding="utf-8")
 
 
 def materialize(project, root):
     info = metadata(project)
-    if project.kind == "plugin" and project.frames:
-        raise ValueError("플러그인 팩은 액션에서 사용할 PNG만 넣을 수 있어요.")
+    if project.kind != "character" and project.frames:
+        raise ValueError("기본 캐릭터 프레임은 캐릭터 팩에만 넣을 수 있어요.")
+    if project.kind == "plugin" and project.skins:
+        raise ValueError("스킨은 스킨 팩이나 캐릭터 팩에 넣을 수 있어요.")
     root.mkdir()
     if info["preview"]:
         write_image(root / "preview.png", project.thumbnail())
     if project.kind == "character":
-        if 0 not in project.frames or len(project.frames) > FRAME_LIMIT:
-            raise ValueError("캐릭터에는 기본 자세 0번이 필요하고, 프레임은 최대 256장까지 넣을 수 있어요.")
-        character = root / "character"
-        bounds = {}
-        for number, data in sorted(project.frames.items()):
-            if type(number) is not int or not 0 <= number <= 9999:
-                raise ValueError("프레임 번호는 0~9999 사이여야 해요.")
-            bounds[str(number)] = write_image(character / f"{number}.png", data)
-        json_file(character / "meta.json", {"cell": 256, "frames": bounds})
-        (character / "name.txt").write_text(project.name + "\n", encoding="utf-8")
+        write_sprite_set(root / "character", project.name, project.frames)
+    for key, skin in project.skins.items():
+        write_sprite_set(root / "skins" / key, skin.name, skin.frames)
     if project.kind == "plugin" or info["actions"] or info["interactions"]:
         rules = {**project.rules, "version": 1, "name": project.name}
         files = {step["file"] for step in image_steps(rules)}

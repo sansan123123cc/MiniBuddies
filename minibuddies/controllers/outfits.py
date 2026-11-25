@@ -4,12 +4,16 @@ import json
 import os
 import random
 from PyQt5.QtCore import QTimer
-from minibuddies.catalog import ALT_FROM, ALT_TF, DORO_MOTION_DIR, F, OUTFIT_LINES, TRANSFORM, persona_of
+from minibuddies.catalog import ALT_FROM, ALT_TF, DORO_MOTION_DIR, F, OUTFIT_LINES, OUTFIT_NAME, TRANSFORM, persona_of
 from minibuddies.runtime import CHARS_DIR
 from minibuddies.ui.widgets import Burst
 
 
 class OutfitController:
+    def outfit_label(self, char, outfit):
+        record = self.outfits.get(char, {}).get(outfit, {})
+        return record.get("skin_label") or OUTFIT_NAME.get(outfit, outfit)
+
     def transform(self, base, to_alt=None):
         """마리안↔모더니아, 도로시↔도로롱: 변신 연출(9번 시트) 후 모습 바꾸기"""
         tf = TRANSFORM.get(base)

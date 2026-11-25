@@ -41,6 +41,8 @@ class RuleDialog(QDialog):
         self.characters = self.rule.setdefault("characters", []) if not self.group else []
         if not rule and not self.group and editor.project.kind == "character" and editor.project.id:
             self.characters.append(editor.project.id)
+        if not rule and not self.group and editor.project.kind == "skin" and editor.project.target:
+            self.characters.append(editor.project.target)
         self.cast = QListWidget()
         self.cast.setMaximumHeight(108)
         self.cast.currentRowChanged.connect(self.select_character)

@@ -5,7 +5,7 @@ from zipfile import BadZipFile
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
-    QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
+    QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
     QMessageBox, QPlainTextEdit, QPushButton, QTabWidget, QVBoxLayout, QWidget,
 )
 
@@ -14,10 +14,12 @@ from minibuddies.authoring.installed import install_into
 from minibuddies.authoring.project import IMAGE_LIMIT, Project, load_legacy
 from minibuddies.ui.editor.frames import CharacterFrames
 from minibuddies.ui.editor.rules import RuleList
+from minibuddies.ui.editor.skins import SkinPanel
 from minibuddies.ui.editor.widgets import SpritePreview, image_file, show_error
 
 PACK_FILTER = "MiniBuddies 팩 (*.mbpack *.zip)"
 PACK_ERRORS = (OSError, ValueError, TypeError, KeyError, AttributeError, RuntimeError, BadZipFile)
+PACK_KINDS = {"character": "캐릭터", "plugin": "플러그인", "skin": "스킨 팩"}
 
 
 def line(limit):
@@ -34,10 +36,12 @@ def archive_preview(parent, info, cover):
     title = QLabel(info["name"])
     title.setTextFormat(Qt.PlainText)
     title.setStyleSheet("font-size:16pt;font-weight:bold;")
-    kind = "캐릭터" if info["kind"] == "character" else "플러그인"
-    details = QLabel(" · ".join(value for value in (kind, info["id"], info.get("author")) if value))
+    target = f"대상 {info['target']}" if info["kind"] == "skin" else ""
+    details = QLabel(" · ".join(value for value in (PACK_KINDS[info["kind"]], info["id"], info.get("author"), target) if value))
     details.setTextFormat(Qt.PlainText)
-    counts = QLabel(f"개별 동작 {info['actions']} · 상호작용 {info['interactions']} · 캐릭터 프레임 {info['frames']}")
+    counts = QLabel(f"개별 동작 {info['actions']} · 상호작용 {info['interactions']} · 기본 프레임 {info['frames']}"
+                    + (f" · 스킨 {len(info['skins'])}개" if info.get("skins") else ""))
+    counts.setWordWrap(True)
     description = QPlainTextEdit(info.get("description", ""))
     description.setReadOnly(True)
     description.setPlaceholderText("설명 없음")
@@ -75,16 +79,24 @@ class PackEditor(QDialog):
         self.description.setMaximumHeight(110)
         self.preview = SpritePreview(196)
         self.kind = QLabel()
+        self.target_label = QLabel("대상 캐릭터")
+        self.target = QComboBox()
+        self.target.setEditable(True)
+        self.target.setInsertPolicy(QComboBox.NoInsert)
+        self.target.lineEdit().setPlaceholderText("캐릭터를 고르거나 ID 입력")
         self.status = QLabel()
         self.status.setWordWrap(True)
         self.status.setTextFormat(Qt.PlainText)
         self.tabs = QTabWidget()
         self.frames = CharacterFrames(self)
         self.rules = RuleList(self)
+        self.skins = SkinPanel(self)
         self.controls = QHBoxLayout()
-        for label, handler in (("새 플러그인", lambda: self.new("plugin")), ("새 캐릭터", lambda: self.new("character")),
-                               ("팩 가져오기…", self.open_pack), ("기존 플러그인 열기…", self.open_legacy)):
-            button = QPushButton(label)
+        self.import_button = QPushButton("팩 가져오기…")
+        for button, handler in ((QPushButton("새 플러그인"), lambda: self.new("plugin")),
+                                (QPushButton("새 캐릭터"), lambda: self.new("character")),
+                                (QPushButton("새 스킨 팩"), lambda: self.new("skin")),
+                                (self.import_button, self.open_pack), (QPushButton("기존 플러그인 열기…"), self.open_legacy)):
             button.clicked.connect(handler)
             self.controls.addWidget(button)
         self.controls.addStretch()
@@ -95,6 +107,7 @@ class PackEditor(QDialog):
         self.tabs.addTab(self.info_page(), "팩 정보")
         self.tabs.addTab(self.frames, "캐릭터 프레임")
         self.tabs.addTab(self.rules, "트리거 · 조건 · 액션")
+        self.tabs.addTab(self.skins, "스킨")
         footer = QHBoxLayout()
         footer.addStretch()
         for label, handler in (("이 PC에 설치", self.install), ("팩 내보내기…", self.export), ("닫기", self.reject)):
@@ -102,14 +115,20 @@ class PackEditor(QDialog):
             button.clicked.connect(handler)
             footer.addWidget(button)
         layout.addLayout(footer)
+        # A file dialog can leave Qt looking for a new default on the editor, including in hidden tabs.
+        for button in self.findChildren(QPushButton):
+            button.setAutoDefault(False)
+            button.setDefault(False)
         for field in (self.id, self.name, self.author, self.description):
             field.textChanged.connect(self.metadata_changed)
+        self.target.currentTextChanged.connect(self.metadata_changed)
         self.load(Project())
 
     def info_page(self):
         page = QWidget()
         form = QFormLayout()
-        for label, widget in (("팩 종류", self.kind), ("이름", self.name), ("팩 ID", self.id), ("제작자", self.author), ("설명", self.description)):
+        for label, widget in (("팩 종류", self.kind), (self.target_label, self.target), ("이름", self.name),
+                              ("팩 ID", self.id), ("제작자", self.author), ("설명", self.description)):
             form.addRow(label, widget)
         cover = QPushButton("대표 이미지 선택…")
         cover.clicked.connect(self.choose_cover)
@@ -132,14 +151,27 @@ class PackEditor(QDialog):
         self.name.setText(project.name)
         self.author.setText(project.author)
         self.description.setPlainText(project.description)
-        self.kind.setText("캐릭터" if project.kind == "character" else "플러그인")
-        self.tabs.setTabVisible(1, project.kind == "character")
+        self.kind.setText(PACK_KINDS[project.kind])
+        self.target_label.setVisible(project.kind == "skin")
+        self.target.setVisible(project.kind == "skin")
+        self.target.clear()
+        if project.kind == "skin":
+            for key in self.known_characters():
+                self.target.addItem(self.character_label(key), key)
+            index = self.target.findData(project.target)
+            self.target.setCurrentIndex(index)
+            if index < 0:
+                self.target.setEditText(project.target)
+        self.tabs.setTabVisible(self.tabs.indexOf(self.frames), project.kind == "character")
+        self.tabs.setTabVisible(self.tabs.indexOf(self.skins), project.kind in ("character", "skin"))
         self.tabs.setCurrentIndex(0)
         self.frames.refresh()
         self.rules.refresh()
+        self.skins.refresh()
         self.preview.display(self.project.thumbnail() or self.step_image({"frame": 0}, self.preview_actor()))
         self.status.clear()
         self.dirty = self.loading = False
+        self.name.setFocus(Qt.OtherFocusReason)
 
     def metadata_changed(self):
         if not self.loading:
@@ -169,6 +201,10 @@ class PackEditor(QDialog):
         project.name = self.name.text().strip()
         project.author = self.author.text().strip()
         project.description = self.description.toPlainText().strip()
+        if project.kind == "skin":
+            target = self.target.currentText().strip()
+            index = self.target.findText(target)
+            project.target = self.target.itemData(index) if index >= 0 else target
 
     def known_characters(self):
         keys = list(self.app.chars)
@@ -186,6 +222,8 @@ class PackEditor(QDialog):
         project = self.project
         if project.kind == "character":
             return project.id
+        if project.kind == "skin":
+            return project.target
         roles = next((scene["roles"] for scene in project.rules.get("interactions", [])), [])
         if roles:
             return roles[0]["character"]
@@ -227,19 +265,21 @@ class PackEditor(QDialog):
 
     def new(self, kind):
         if self.discard_ok():
-            self.load(Project(kind=kind))
+            self.load(Project(kind=kind, target=self.app.mode if kind == "skin" else ""))
 
     def open_pack(self):
-        path, _ = QFileDialog.getOpenFileName(self, "MiniBuddies 팩 가져오기", "", PACK_FILTER)
-        if not path:
-            return
         try:
+            path, _ = QFileDialog.getOpenFileName(self, "MiniBuddies 팩 가져오기", "", PACK_FILTER)
+            if not path:
+                return
             info, cover = inspect_archive(path)
             if archive_preview(self, info, cover) and self.discard_ok():
                 self.load(load_archive(path))
                 self.status.setText("팩을 열었어요. 편집하거나 이 PC에 설치할 수 있어요.")
         except PACK_ERRORS as error:
             show_error(self, error)
+        finally:
+            self.import_button.setFocus(Qt.OtherFocusReason)
 
     def open_legacy(self):
         path, _ = QFileDialog.getOpenFileName(self, "기존 플러그인 열기", str(self.app.plugins.root), "플러그인 (plugin.json)")
@@ -282,10 +322,19 @@ class PackEditor(QDialog):
                 self.project.cover = preview
             install_into(self.app, self.project)
             self.dirty = False
-            self.status.setText("설치했어요. 환경설정의 캐릭터 탭을 다시 열거나 펫의 플러그인 메뉴에서 사용할 수 있어요.")
+            if self.project.kind == "skin":
+                self.status.setText("설치했어요. 대상 펫을 우클릭하고 옷 갈아입기 또는 모습 바꾸기에서 스킨을 고르세요.")
+            else:
+                self.status.setText("설치했어요. 환경설정의 캐릭터 탭을 다시 열거나 펫의 플러그인 메뉴에서 사용할 수 있어요.")
         except PACK_ERRORS as error:
             show_error(self, error)
 
     def reject(self):
         if self.discard_ok():
             super().reject()
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter) and not isinstance(self.focusWidget(), QPushButton):
+            event.accept()
+            return
+        super().keyPressEvent(event)

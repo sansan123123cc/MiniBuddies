@@ -13,10 +13,26 @@ FRAME_NAMES = {0: "기본 자세", 1: "걷기", 2: "걷기", 3: "걷기", 4: "�
                15: "먹기", 16: "울기", 17: "살짝 보기", 18: "걸터앉기", 19: "하품"}
 
 
+def read_numbered_images(files):
+    if len(files) > FRAME_LIMIT:
+        raise ValueError(f"프레임은 최대 {FRAME_LIMIT}장까지 넣을 수 있어요.")
+    result = {}
+    for file in files:
+        path = Path(file)
+        if not path.stem.isascii() or not path.stem.isdecimal() or len(path.stem) > 4:
+            raise ValueError(f"일괄 추가 파일은 0.png처럼 번호로 이름을 붙이세요. {path.name}")
+        number = int(path.stem)
+        if number in result:
+            raise ValueError(f"{number}번 프레임이 중복됐어요.")
+        result[number] = read_image(path)
+    return result
+
+
 class CharacterFrames(QWidget):
-    def __init__(self, editor):
+    def __init__(self, editor, get_frames=None):
         super().__init__()
         self.editor = editor
+        self.get_frames = get_frames or (lambda: editor.project.frames)
         self.list = QListWidget()
         self.preview = SpritePreview(184)
         self.number = spin(0, 9999, 0)
@@ -45,7 +61,7 @@ class CharacterFrames(QWidget):
         self.list.currentRowChanged.connect(self.select)
 
     def refresh(self, selected=None):
-        self.numbers = sorted(self.editor.project.frames)
+        self.numbers = sorted(self.get_frames())
         self.list.clear()
         for number in self.numbers:
             self.list.addItem(f"{number} · {FRAME_NAMES[number]}" if number in FRAME_NAMES else str(number))
@@ -58,7 +74,7 @@ class CharacterFrames(QWidget):
         if row >= 0:
             number = self.numbers[row]
             self.number.setValue(number)
-            self.preview.display(self.editor.project.frames[number])
+            self.preview.display(self.get_frames()[number])
 
     def add_image(self):
         number = self.number.value()
@@ -71,22 +87,14 @@ class CharacterFrames(QWidget):
         if not files:
             return
         try:
-            new = {}
-            for file in files:
-                path = Path(file)
-                if not path.stem.isascii() or not path.stem.isdecimal() or len(path.stem) > 4:
-                    raise ValueError(f"일괄 추가 파일은 0.png처럼 번호로 이름을 붙이세요. {path.name}")
-                number = int(path.stem)
-                if number in new:
-                    raise ValueError(f"{number}번 프레임이 중복됐어요.")
-                new[number] = read_image(path)
+            new = read_numbered_images(files)
         except (OSError, ValueError) as error:
             show_error(self, error)
             return
         self.store(new, min(new))
 
     def store(self, new, selected):
-        frames = self.editor.project.frames
+        frames = self.get_frames()
         if len(set(frames) | set(new)) > FRAME_LIMIT:
             show_error(self, "프레임은 최대 256장까지 넣을 수 있어요.")
             return
@@ -97,6 +105,6 @@ class CharacterFrames(QWidget):
     def remove(self):
         row = self.list.currentRow()
         if row >= 0:
-            del self.editor.project.frames[self.numbers[row]]
+            del self.get_frames()[self.numbers[row]]
             self.editor.changed()
             self.refresh()
