@@ -6,7 +6,9 @@ from pathlib import Path
 
 from PyQt5.QtGui import QImage, QImageReader
 
-from minibuddies.plugins.scenes import PACK_ID, action_name, probability, read_interaction, read_steps, speech_text
+from minibuddies.plugins.scenes import (
+    PACK_ID, action_name, probability, read_effect_designs, read_interaction, read_steps, speech_text,
+)
 
 CELL = 256
 SETTINGS_KEY = "character_plugins"
@@ -66,16 +68,22 @@ def load_sprite(path):
     image = reader.read()
     if image.isNull() or not image.hasAlphaChannel():
         raise ValueError(f"투명 배경이 있는 PNG가 필요해요 ({path.name})")
+    bounds = sprite_bounds(image)
+    if bounds is None:
+        raise ValueError(f"보이는 픽셀이 없어요 ({path.name})")
+    return Sprite(path, bounds)
+
+
+def sprite_bounds(image):
     alpha = image.convertToFormat(QImage.Format_Alpha8)
     pixels = alpha.constBits().asstring(alpha.sizeInBytes()).translate(ALPHA_MASK)
     rows = [pixels[y * alpha.bytesPerLine():y * alpha.bytesPerLine() + CELL] for y in range(CELL)]
     occupied = [(y, row.find(b"\1"), row.rfind(b"\1")) for y, row in enumerate(rows) if b"\1" in row]
     if not occupied:
-        raise ValueError(f"보이는 픽셀이 없어요 ({path.name})")
-    bounds = {"top": occupied[0][0] / CELL, "bottom": (occupied[-1][0] + 1) / CELL,
-              "left": min(row[1] for row in occupied) / CELL,
-              "right": (max(row[2] for row in occupied) + 1) / CELL}
-    return Sprite(path, bounds)
+        return None
+    return {"top": occupied[0][0] / CELL, "bottom": (occupied[-1][0] + 1) / CELL,
+            "left": min(row[1] for row in occupied) / CELL,
+            "right": (max(row[2] for row in occupied) + 1) / CELL}
 
 
 def read_pack(folder, sprite_offset):
@@ -95,10 +103,8 @@ def read_pack(folder, sprite_offset):
         raise ValueError("actions는 최대 24개까지 정의할 수 있어요")
     if not isinstance(interactions, list) or len(interactions) > 16:
         raise ValueError("interactions는 최대 16개까지 정의할 수 있어요")
-    if not definitions and not interactions:
-        raise ValueError("actions 또는 interactions가 하나 이상 필요해요")
-
     sprites = {}
+    effect_images = {}
     actions = []
     names = set()
 
@@ -111,6 +117,19 @@ def read_pack(folder, sprite_offset):
             sprites[path] = (-1 - sprite_offset - len(sprites), load_sprite(path))
         return sprites[path][0]
 
+    def effect_image(file):
+        index = sprite_id(file)
+        if index not in effect_images:
+            image = QImage(str(pack_file(folder, file)))
+            if image.isNull():
+                raise ValueError("효과 PNG를 읽을 수 없어요")
+            effect_images[index] = image
+        return effect_images[index]
+
+    designs = read_effect_designs(data.get("effects", {}), effect_image)
+    if not definitions and not interactions and not designs:
+        raise ValueError("개별 동작, 상호작용 또는 직접 만든 효과가 하나 이상 필요해요")
+
     for definition in definitions:
         if not isinstance(definition, dict):
             raise ValueError("행동은 JSON 객체로 정의해 주세요")
@@ -120,7 +139,7 @@ def read_pack(folder, sprite_offset):
         allowed = character_ids(definition.get("characters", []))
         if characters and not allowed <= characters:
             raise ValueError("동작의 캐릭터는 팩의 characters 목록에 포함되어야 해요")
-        beats, duration = read_steps(definition.get("frames"), sprite_id)
+        beats, duration = read_steps(definition.get("frames"), sprite_id, designs=designs)
         if duration > 1800 or sum(beat.effect is not None for beat in beats) > 24:
             raise ValueError("한 개별 동작은 1800틱과 효과 24개 이하여야 해요")
         sequence = []
@@ -135,6 +154,6 @@ def read_pack(folder, sprite_offset):
         events = tuple(beat for beat in beats if beat.speech or beat.effect is not None)
         actions.append(Action(name, tuple(sequence), speech, chance, allowed, events))
     allowed = frozenset(characters)
-    interactions = tuple(read_interaction(item, allowed, names, sprite_id) for item in interactions)
+    interactions = tuple(read_interaction(item, allowed, names, sprite_id, designs) for item in interactions)
     participants = frozenset().union(*(interaction.characters for interaction in interactions))
     return Pack(folder.name, label, allowed, tuple(actions), interactions, participants), dict(sprites.values())

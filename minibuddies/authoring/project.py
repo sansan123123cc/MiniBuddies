@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 
 from minibuddies.plugins.packs import load_sprite, pack_file, read_pack
+from minibuddies.plugins.scenes import read_effect_designs
 
 ID = re.compile(r"[a-z0-9][a-z0-9_-]{0,47}")
 ASSET = re.compile(r"assets/[a-f0-9]{24}\.png")
@@ -54,17 +55,21 @@ def sections(data, key):
     return items
 
 
+def rule_steps(rules):
+    for action in sections(rules, "actions"):
+        yield from sections(action, "frames")
+    for interaction in sections(rules, "interactions"):
+        for role in sections(interaction, "roles"):
+            yield from sections(role, "steps")
+
+
 def image_steps(rules):
     """Yield only the places where the runtime schema accepts a sprite filename."""
-    sequences = [sections(action, "frames") for action in sections(rules, "actions")]
-    for interaction in sections(rules, "interactions"):
-        sequences.extend(sections(role, "steps") for role in sections(interaction, "roles"))
-    for sequence in sequences:
-        for step in sequence:
-            if "file" in step:
-                if not isinstance(step["file"], str):
-                    raise ValueError("액션 파일 이름은 문자열이어야 해요.")
-                yield step
+    for step in rule_steps(rules):
+        if "file" in step:
+            if not isinstance(step["file"], str):
+                raise ValueError("액션 파일 이름은 문자열이어야 해요.")
+            yield step
 
 
 def validate_id(key):
@@ -160,6 +165,9 @@ def write_sprite_set(directory, name, frames):
 
 def materialize(project, root):
     info = metadata(project)
+    effects = read_effect_designs(project.rules.get("effects", {}))
+    if effects:
+        info["effects"] = len(effects)
     if project.kind != "character" and project.frames:
         raise ValueError("기본 캐릭터 프레임은 캐릭터 팩에만 넣을 수 있어요.")
     if project.kind == "plugin" and project.skins:
@@ -171,11 +179,12 @@ def materialize(project, root):
         write_sprite_set(root / "character", project.name, project.frames)
     for key, skin in project.skins.items():
         write_sprite_set(root / "skins" / key, skin.name, skin.frames)
-    if project.kind == "plugin" or info["actions"] or info["interactions"]:
+    if project.kind == "plugin" or info["actions"] or info["interactions"] or effects:
         rules = {**project.rules, "version": 1, "name": project.name}
         files = {step["file"] for step in image_steps(rules)}
+        files.update(file for effect in effects.values() for layer in effect.layers for file in layer.files)
         if len(files) > 64:
-            raise ValueError("동작에 추가할 PNG는 최대 64장이에요.")
+            raise ValueError("동작과 효과에 추가할 PNG는 합계 64장이에요.")
         for filename in sorted(files):
             if not ASSET.fullmatch(filename) or filename not in project.assets:
                 raise ValueError("동작에 사용할 그림이 팩에 없어요.")
@@ -195,4 +204,8 @@ def load_legacy(folder):
                       name=rules.get("name", folder.name), rules=rules)
     for step in image_steps(rules):
         step["file"] = project.add_image(read_image(pack_file(folder, step["file"])))
+    for effect in rules.get("effects", {}).values():
+        for layer in effect["layers"]:
+            if layer["kind"] == "image":
+                layer["files"] = [project.add_image(read_image(pack_file(folder, file))) for file in layer["files"]]
     return project

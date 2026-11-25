@@ -1,6 +1,7 @@
 """Play speech and effects on top of one pet's frame sequence."""
 
 from minibuddies.effects import PluginEffectOverlay
+from minibuddies.plugins.scenes import SPEECH_TICKS
 
 
 class ActionPlayback:
@@ -16,7 +17,7 @@ class ActionPlayback:
         speech = (beat.speech if beat else "") or opening_speech
         if speech:
             previous = pet.bubble
-            pet.say(speech, min(pet.t, 120))
+            pet.say(speech, min(pet.t, SPEECH_TICKS))
             if pet.bubble is not previous:
                 self.bubble = pet.bubble
         if beat and beat.effect:

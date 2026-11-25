@@ -8,6 +8,7 @@ from PyQt5.QtWidgets import (
 )
 
 from minibuddies.plugins.scenes import PACK_ID
+from minibuddies.ui.editor.playback import PlaybackDialog
 from minibuddies.ui.editor.steps import Timeline
 from minibuddies.ui.editor.widgets import options, show_error, spin
 
@@ -78,6 +79,11 @@ class RuleDialog(QDialog):
             speech_row.addRow("시작 말풍선", self.speech)
             actions.addLayout(speech_row)
         actions.addWidget(self.timeline)
+        self.preview_button = QPushButton("전체 참가자 미리 재생…" if self.group else "동작 미리 재생…")
+        self.preview_button.setAutoDefault(False)
+        self.preview_button.clicked.connect(self.preview_action)
+        self.timeline.changed.connect(self.update_preview)
+        actions.addWidget(self.preview_button)
         action_box = QGroupBox("액션")
         action_box.setLayout(actions)
 
@@ -118,6 +124,26 @@ class RuleDialog(QDialog):
         else:
             actor = self.characters[row] if row >= 0 else self.editor.preview_actor()
             self.timeline.load(self.rule.setdefault("frames", []), actor, [])
+        self.update_preview()
+
+    def update_preview(self):
+        playable = any(role["steps"] for role in self.roles) if self.group else bool(self.timeline.steps)
+        self.preview_button.setEnabled(playable)
+
+    def preview_action(self):
+        if self.group:
+            sequences = {role["character"]: role["steps"] for role in self.roles}
+            opening_speech = ""
+        else:
+            sequences = {self.timeline.actor: self.timeline.steps}
+            opening_speech = self.speech.text()
+        try:
+            dialog = PlaybackDialog(self, self.editor, sequences, group=self.group, opening_speech=opening_speech)
+        except (TypeError, ValueError) as error:
+            show_error(self, error)
+            return
+        dialog.exec_()
+        dialog.deleteLater()
 
     def add_character(self):
         if self.group and len(self.roles) >= 6:

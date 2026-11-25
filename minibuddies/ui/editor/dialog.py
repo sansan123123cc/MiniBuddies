@@ -12,10 +12,11 @@ from PyQt5.QtWidgets import (
 from minibuddies.authoring.archive import EXTENSION, export_archive, inspect_archive, load_archive
 from minibuddies.authoring.installed import install_into
 from minibuddies.authoring.project import IMAGE_LIMIT, Project, load_legacy
+from minibuddies.ui.editor.effects import EffectPanel
 from minibuddies.ui.editor.frames import CharacterFrames
 from minibuddies.ui.editor.rules import RuleList
 from minibuddies.ui.editor.skins import SkinPanel
-from minibuddies.ui.editor.widgets import SpritePreview, image_file, show_error
+from minibuddies.ui.editor.widgets import SpritePreview, image_file, image_pixmap, show_error
 from minibuddies.ui.window_order import run_native_dialog
 
 PACK_FILTER = "MiniBuddies 팩 (*.mbpack *.zip)"
@@ -41,7 +42,8 @@ def archive_preview(parent, info, cover):
     details = QLabel(" · ".join(value for value in (PACK_KINDS[info["kind"]], info["id"], info.get("author"), target) if value))
     details.setTextFormat(Qt.PlainText)
     counts = QLabel(f"개별 동작 {info['actions']} · 상호작용 {info['interactions']} · 기본 프레임 {info['frames']}"
-                    + (f" · 스킨 {len(info['skins'])}개" if info.get("skins") else ""))
+                    + (f" · 스킨 {len(info['skins'])}개" if info.get("skins") else "")
+                    + (f" · 효과 {info['effects']}개" if info.get("effects") else ""))
     counts.setWordWrap(True)
     description = QPlainTextEdit(info.get("description", ""))
     description.setReadOnly(True)
@@ -92,6 +94,7 @@ class PackEditor(QDialog):
         self.frames = CharacterFrames(self)
         self.rules = RuleList(self)
         self.skins = SkinPanel(self)
+        self.effects = EffectPanel(self)
         self.controls = QHBoxLayout()
         self.import_button = QPushButton("팩 가져오기…")
         for button, handler in ((QPushButton("새 플러그인"), lambda: self.new("plugin")),
@@ -109,6 +112,7 @@ class PackEditor(QDialog):
         self.tabs.addTab(self.frames, "캐릭터 프레임")
         self.tabs.addTab(self.rules, "트리거 · 조건 · 액션")
         self.tabs.addTab(self.skins, "스킨")
+        self.tabs.addTab(self.effects, "효과")
         footer = QHBoxLayout()
         footer.addStretch()
         for label, handler in (("이 PC에 설치", self.install), ("팩 내보내기…", self.export), ("닫기", self.reject)):
@@ -169,6 +173,7 @@ class PackEditor(QDialog):
         self.frames.refresh()
         self.rules.refresh()
         self.skins.refresh()
+        self.effects.refresh()
         self.preview.display(self.project.thumbnail() or self.step_image({"frame": 0}, self.preview_actor()))
         self.status.clear()
         self.dirty = self.loading = False
@@ -213,11 +218,14 @@ class PackEditor(QDialog):
             keys.insert(0, self.project.id)
         return keys
 
-    def character_label(self, key):
+    def character_label(self, key, *, include_id=True):
         if self.project.kind == "character" and key == self.project.id:
-            return f"{self.project.name or key} ({key})"
+            label = self.project.name or key
+            return f"{label} ({key})" if include_id else label
         record = self.app.chars.get(key) or {}
-        return f"{record['label']} ({key})" if "label" in record else key
+        if "label" in record:
+            return f"{record['label']} ({key})" if include_id else record["label"]
+        return key
 
     def preview_actor(self):
         project = self.project
@@ -248,6 +256,12 @@ class PackEditor(QDialog):
             except OSError:
                 pass
         return None
+
+    def effect_image(self, file):
+        image = image_pixmap(self.project.assets.get(file)).toImage()
+        if image.isNull():
+            raise ValueError("효과에 사용할 PNG가 팩에 없어요")
+        return image
 
     def choose_cover(self):
         data = image_file(self)

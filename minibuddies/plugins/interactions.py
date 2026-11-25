@@ -6,6 +6,7 @@ import time
 
 from minibuddies.effects import PluginEffectOverlay
 from minibuddies.group_hooks import GroupHooks, close_effect, ground_group_interrupted, restore_ground_pet
+from minibuddies.plugins.scenes import SPEECH_TICKS
 
 
 def start_timeline(app, group, members):
@@ -30,7 +31,7 @@ def advance_timeline(app, group, members, elapsed):
             pet.fy = group["floor"][1] - pet.S * pet.fbottom(beat.frame)
         if beat.speech:
             previous = pet.bubble
-            pet.say(beat.speech, min(120, group["interaction"].duration - elapsed))
+            pet.say(beat.speech, min(SPEECH_TICKS, group["interaction"].duration - elapsed))
             if pet.bubble is not previous and pet.bubble is not None:
                 group["speech"][pet] = pet.bubble
         if beat.effect:

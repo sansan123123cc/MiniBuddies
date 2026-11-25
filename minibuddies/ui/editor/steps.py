@@ -1,6 +1,6 @@
 """Edit and preview a sequence of poses, speech, and visual effects."""
 
-from PyQt5.QtCore import QTimer, Qt
+from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import (
     QColorDialog, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
@@ -42,7 +42,8 @@ class StepDialog(QDialog):
         effect = step.get("effect", {})
         self.speech = QLineEdit(step.get("say", ""))
         self.speech.setMaxLength(160)
-        self.preset = options([("효과 없음", None), *PRESETS], effect.get("preset"))
+        custom = [(f"{entry['name']} ({key})", key) for key, entry in editor.project.rules.get("effects", {}).items()]
+        self.preset = options([("효과 없음", None), *PRESETS, *custom], effect.get("preset"))
         self.colors = QLineEdit(", ".join(effect.get("colors", ["#ff7990", "#fff1cf"])))
         self.color_button = QPushButton("색상 추가…")
         self.color_button.clicked.connect(self.add_color)
@@ -127,6 +128,8 @@ class StepDialog(QDialog):
 
 
 class Timeline(QWidget):
+    changed = pyqtSignal()
+
     def __init__(self, editor, *, group):
         super().__init__()
         self.editor, self.group = editor, group
@@ -139,12 +142,6 @@ class Timeline(QWidget):
             button = QPushButton(label)
             button.clicked.connect(handler)
             controls.addWidget(button)
-        self.play_button = QPushButton("포즈 미리 재생")
-        self.play_button.setCheckable(True)
-        self.play_button.toggled.connect(self.play)
-        self.timer = QTimer(self)
-        self.timer.setSingleShot(True)
-        self.timer.timeout.connect(self.advance)
         body = QHBoxLayout()
         body.addWidget(self.list, 1)
         body.addWidget(self.preview)
@@ -152,12 +149,10 @@ class Timeline(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addLayout(controls)
         layout.addLayout(body)
-        layout.addWidget(self.play_button)
         self.list.currentRowChanged.connect(self.select)
         self.list.itemDoubleClicked.connect(self.edit)
 
     def load(self, steps, actor, targets):
-        self.play_button.setChecked(False)
         self.steps, self.actor, self.targets = steps, actor, targets
         self.setEnabled(not self.group or bool(actor))
         self.refresh(0)
@@ -169,7 +164,6 @@ class Timeline(QWidget):
             extra = " · ".join(part for part in (step.get("say"), step.get("effect", {}).get("preset")) if part)
             self.list.addItem(f"{pose} · {step['ticks']} 틱" + (f" · {extra}" if extra else ""))
         self.list.setCurrentRow(min(row, len(self.steps) - 1))
-        self.play_button.setEnabled(bool(self.steps))
 
     def select(self, row):
         if not 0 <= row < len(self.steps):
@@ -179,20 +173,6 @@ class Timeline(QWidget):
 
     def pose_before(self, row):
         return next((step for step in reversed(self.steps[:row]) if "frame" in step or "file" in step), {"frame": 0})
-
-    def play(self, enabled):
-        self.timer.stop()
-        if enabled and self.steps:
-            self.play_row = -1
-            self.advance()
-
-    def advance(self):
-        self.play_row += 1
-        if self.play_row >= len(self.steps):
-            self.play_button.setChecked(False)
-            return
-        self.list.setCurrentRow(self.play_row)
-        self.timer.start(self.steps[self.play_row]["ticks"] * 16)
 
     def edit(self):
         row = self.list.currentRow()
@@ -204,24 +184,24 @@ class Timeline(QWidget):
             self.open_step(len(self.steps), {"frame": 0, "ticks": 24})
 
     def open_step(self, row, step):
-        self.play_button.setChecked(False)
         dialog = StepDialog(self, self.editor, step, self.group, self.actor, self.targets,
                             previous_pose=self.pose_before(row))
         if dialog.exec_() == QDialog.Accepted:
             self.steps[row:row + 1] = [dialog.result_step]
             self.refresh(row)
+            self.changed.emit()
 
     def remove(self):
-        self.play_button.setChecked(False)
         row = self.list.currentRow()
         if row >= 0:
             self.steps.pop(row)
             self.refresh(row)
+            self.changed.emit()
 
     def move_step(self, change):
-        self.play_button.setChecked(False)
         row = self.list.currentRow()
         target = row + change
         if 0 <= row < len(self.steps) and 0 <= target < len(self.steps):
             self.steps[row], self.steps[target] = self.steps[target], self.steps[row]
             self.refresh(target)
+            self.changed.emit()

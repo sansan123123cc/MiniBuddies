@@ -66,6 +66,9 @@ def read_info(archive, names):
         count = info.get(field)
         if type(count) is not int or not 0 <= count <= maximum:
             raise ValueError(f"팩의 {field} 개수 정보가 올바르지 않아요.")
+    effect_count = info.get("effects", 0)
+    if type(effect_count) is not int or not 0 <= effect_count <= 24:
+        raise ValueError("팩의 효과 개수 정보가 올바르지 않아요.")
     if info.get("preview") not in (None, "preview.png") or info.get("preview") and "preview.png" not in names:
         raise ValueError("팩의 미리보기 정보를 확인해 주세요.")
     return info
@@ -102,6 +105,7 @@ def load_archive(path):
     with TemporaryDirectory(prefix="mbpack-check-") as directory:
         actual = materialize(project, Path(directory) / project.id)
     if (any(actual[field] != info[field] for field in ("actions", "interactions", "frames"))
+            or actual.get("effects", 0) != info.get("effects", 0)
             or skin_details(actual.get("skins", [])) != skin_details(info.get("skins", []))):
         raise ValueError("팩의 미리보기 정보와 실제 내용이 일치하지 않아요.")
     return project
