@@ -64,10 +64,10 @@ class AppMenus:
             toggle.toggled.connect(lambda checked, item=toggle, pack_id=pack.id: assign(item, pack_id, checked))
             if pack.id in selected:
                 options.addSeparator()
-                for action in pack.actions:
+                for action in library.actions_for(pack, pet.char):
                     item = options.addAction(action.label)
                     item.triggered.connect(lambda _checked, p=pack, a=action: library.play(pet, p, a))
-                    item.setEnabled(bool(library.can_play(pet)))
+                    item.setEnabled(library.can_play_action(pet, action))
 
     def menu(self, pos, who):
         """우클릭 메뉴: 놀이·부르기만. 설정은 '환경설정…' 창으로"""

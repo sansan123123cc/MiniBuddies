@@ -18,7 +18,8 @@ def upd_path(name):
 
 def upd_load(name):
     try:
-        return json.load(open(upd_path(name), encoding="utf-8"))
+        with open(upd_path(name), encoding="utf-8") as source:
+            return json.load(source)
     except Exception:
         return {}
 

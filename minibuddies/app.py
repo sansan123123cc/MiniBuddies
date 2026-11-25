@@ -5,8 +5,10 @@ import os
 import queue
 import random
 import sys
+from pathlib import Path
 from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QApplication
+from minibuddies.authoring.installed import load_characters
 from minibuddies.catalog import (
     BUBBLE_PX,
     OUTFIT_NAME,
@@ -117,6 +119,9 @@ class App(
             self.outfits[base] = {o: ofs[o] for o in order}
             self.chars[base] = None                      # 설정을 읽은 뒤 채움
         self.outfit = {}
+        self.content_root = Path(BASE) / "user-packs"
+        custom = load_characters(self.content_root, self.chars, _crash_write)
+        self.chars.update(custom)
         # 한 번에 한 캐릭터만 (실행할 때 이름을 넘기면 그 캐릭터: buddies.py monkey)
         arg = sys.argv[1] if len(sys.argv) > 1 else ""
         try:                                   # roster.txt 가 있으면 그 명단이 우선 (업데이트로 새 캐릭터가 들어오면 여기만 바뀜)
@@ -133,6 +138,11 @@ class App(
         self.team = [n for n in arg.split("+") if n in self.chars] if ("+" in arg or self.one_each) else []
         if len(self.team) < 2 and not (self.one_each and self.team):
             self.team = []
+        if custom:
+            if not self.team:
+                self.team = [arg if arg in self.chars else next((c for c in ("elysia", "bingha") if c in self.chars), next(iter(self.chars)))]
+            self.one_each = True
+            self.team = list(dict.fromkeys([*self.team, *custom]))
         self.roster = self.team[:]                 # 이 패키지에 들어 있는 전원
         # 그룹별 합동 장면: chars/_scenes_<그룹> (합본) 또는 chars/_scenes (그룹 하나짜리 패키지)
         self.scene_sets = {}
@@ -163,7 +173,7 @@ class App(
                 self.cfg = json.load(settings)
         except Exception:
             self.cfg = {}
-        self.plugins = PluginLibrary(os.path.join(BASE, "plugins"), _crash_write)
+        self.plugins = PluginLibrary(os.path.join(BASE, "plugins"), _crash_write, self.content_root)
         self.size = int(self.cfg.get("size", 100))
         SCREEN["name"] = self.cfg.get("screen")
         CHAR_SCREEN.clear(); CHAR_SCREEN.update(self.cfg.get("char_screen", {}))

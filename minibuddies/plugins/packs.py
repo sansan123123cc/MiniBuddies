@@ -25,6 +25,7 @@ class Action:
     frames: tuple
     speech: str
     idle_chance: float
+    characters: frozenset
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,12 @@ class Pack:
     actions: tuple
     interactions: tuple
     participants: frozenset
+
+
+def character_ids(value):
+    if not isinstance(value, list) or any(not isinstance(char, str) or not PACK_ID.fullmatch(char) for char in value):
+        raise ValueError("characters에는 캐릭터 폴더 이름을 적어 주세요")
+    return frozenset(value)
 
 
 def pack_file(folder, name):
@@ -78,11 +85,9 @@ def read_pack(folder, sprite_offset):
     if not isinstance(data, dict) or type(data.get("version")) is not int or data["version"] != 1:
         raise ValueError("지원하는 plugin.json 버전은 1이에요")
     label = data.get("name", folder.name)
-    characters = data.get("characters", [])
+    characters = character_ids(data.get("characters", []))
     if not isinstance(label, str) or not label.strip() or len(label) > 80:
         raise ValueError("플러그인 이름을 1~80자로 입력하세요")
-    if not isinstance(characters, list) or any(not isinstance(char, str) or not PACK_ID.fullmatch(char) for char in characters):
-        raise ValueError("characters에는 캐릭터 폴더 이름을 적어 주세요")
     definitions = data.get("actions", [])
     interactions = data.get("interactions", [])
     if not isinstance(definitions, list) or len(definitions) > 24:
@@ -111,6 +116,9 @@ def read_pack(folder, sprite_offset):
         name = action_name(definition.get("name"), names)
         speech = speech_text(definition.get("say", ""))
         chance = probability(definition.get("idle_chance", 0), "idle_chance")
+        allowed = character_ids(definition.get("characters", []))
+        if characters and not allowed <= characters:
+            raise ValueError("동작의 캐릭터는 팩의 characters 목록에 포함되어야 해요")
         frames = definition.get("frames")
         if not isinstance(frames, list) or not 1 <= len(frames) <= 64:
             raise ValueError("행동의 프레임은 1~64개여야 해요")
@@ -118,10 +126,13 @@ def read_pack(folder, sprite_offset):
         for frame in frames:
             ticks = frame.get("ticks") if isinstance(frame, dict) else None
             ticks = integer(ticks, 1, 600, "ticks")
-            sequence.append((sprite_id(frame.get("file")), ticks))
+            if ("file" in frame) == ("frame" in frame):
+                raise ValueError("각 프레임에는 file이나 frame 중 하나를 넣으세요")
+            frame_id = sprite_id(frame["file"]) if "file" in frame else integer(frame["frame"], 0, 9999, "frame")
+            sequence.append((frame_id, ticks))
         if sum(ticks for _, ticks in sequence) > 1800:
             raise ValueError("한 행동의 전체 길이는 1800틱 이하여야 해요")
-        actions.append(Action(name, tuple(sequence), speech, chance))
+        actions.append(Action(name, tuple(sequence), speech, chance, allowed))
     allowed = frozenset(characters)
     interactions = tuple(read_interaction(item, allowed, names, sprite_id) for item in interactions)
     participants = frozenset().union(*(interaction.characters for interaction in interactions))

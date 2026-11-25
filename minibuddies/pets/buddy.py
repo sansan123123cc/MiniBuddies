@@ -79,6 +79,7 @@ class Buddy(PetMovement, PetAnimation, PetInput, QWidget):
 
     def set(self, st, t=0, after=None):
         prev = self.state
+        self.align_sequence = False
         self.state, self.t, self.after = st, t, after
         if st not in ("roll",):
             self.angle = 0

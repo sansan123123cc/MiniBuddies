@@ -272,7 +272,7 @@ class PetMovement:
                 self.angle += self.vx * 360 / (math.pi * self.S * 0.75)
         if st == "seq" and self.t > 0:
             frame = self.frame()
-            if frame in self.app.plugins.sprites:
+            if self.align_sequence:
                 self.fy = self.surface[1] - self.S * self.fbottom(frame)
         if self.t <= 0:
             nxt, self.after = self.after, None

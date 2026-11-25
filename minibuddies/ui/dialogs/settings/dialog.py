@@ -129,6 +129,12 @@ class SettingsDialog(CharacterTabs, AppearanceTabs, ActivityTabs, IntegrationTab
         tabs.addTab(etc_w, "AI 연결")
         tabs.addTab(self._stack([("", self.tab_update()),
                                  ("", QLabel("설정은 프로그램 폴더의 settings.json 에 저장돼요."))]), "업데이트")
+        editor_button = QPushButton("제작 에디터 열기…")
+        editor_button.clicked.connect(self.open_pack_editor)
+        editor_page = QWidget(); editor_layout = QVBoxLayout(editor_page)
+        editor_layout.addWidget(QLabel("캐릭터와 동작을 만들고 MiniBuddies 팩으로 공유할 수 있어요."))
+        editor_layout.addWidget(editor_button, alignment=Qt.AlignLeft); editor_layout.addStretch()
+        tabs.addTab(editor_page, "에디터")
         # 탭 내용이 길어도 창이 모니터 밖으로 넘치지 않게 — 탭마다 스크롤 영역으로 감싸기
         from PyQt5.QtWidgets import QScrollArea, QFrame
         _nat = tabs.sizeHint()
@@ -167,6 +173,11 @@ class SettingsDialog(CharacterTabs, AppearanceTabs, ActivityTabs, IntegrationTab
         _h = min(max(self.height(), _nat.height() + 90), cur.height() - 70)
         self.resize(_w, _h)
         self.move(max(cur.left() + 10, cur.center().x() - _w // 2), max(cur.top() + 30, cur.center().y() - _h // 2))
+
+    def open_pack_editor(self):
+        from minibuddies.ui.editor.dialog import PackEditor
+
+        PackEditor(self.app, self).exec_()
 
     # 움직임: 흔들림 · 자동 단체 놀이 · 말풍선
     def search_bar(self, tabs):
