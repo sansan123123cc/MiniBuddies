@@ -329,6 +329,7 @@ input.tx{flex:1;min-width:0;border:1px solid var(--ln);border-radius:6px;padding
 .ask{display:flex;flex-direction:column;gap:4px;background:#fff4f5;border:1px solid #f6c9cc;border-radius:7px;padding:5px 7px}
 .ask .t{justify-content:flex-end;gap:4px}
 .row{display:flex;gap:4px;align-items:center}
+.tip{font-size:11px;line-height:1.45;color:#6b5560;background:#fff8e6;border:1px solid #f3dfa8;border-radius:7px;padding:4px 6px}.tip b{color:#9a6a00}
 </style></head><body><div id="p" class="pywebview-drag-region">
 <div id="h"><span class="pywebview-drag-region">사용량</span><button onclick="pywebview.api.refresh()" title="지금 새로 읽기">↻</button><button id="gb" onclick="togSet()" title="보일 것 고르기">⚙</button><button onclick="pywebview.api.close()" title="닫기">×</button></div>
 <div id="set" hidden><div class="s">보일 것 고르기</div>
@@ -367,6 +368,7 @@ function accHtml(a,i,n,dup){
   }
   if(a.email||a.who_name)h+='<div class="em" title="'+esc(a.email)+'">'+esc(a.email||a.who_name)+'</div>';
   if(dup)h+='<div class="warn">⚠ 위의 다른 칸과 같은 계정이에요 — 다른 계정으로 로그인해 주세요</div>';
+  if(a.cw)h+='<div class="tip">💡 위젯 창에선 <b>Google로 계속</b>이 안 돼요(구글 창이 평소 브라우저로 열려서 끊김). 이메일 칸에 <b>구글 주소를 그대로</b> 넣고 <b>이메일로 계속</b> → 메일로 온 <b>코드</b>를 넣어 주세요.</div>';
   if(UI.del===a.id){
     h+='<div class="ask"><div class="s" style="color:#a0474b">「'+esc(nm)+'」 계정을 지울까요? 이 위젯에 저장된 로그인도 같이 지워져요.</div><div class="t"><button class="del" onclick="delGo(\\''+a.id+'\\')">삭제</button><button class="no" onclick="cancel()">취소</button></div></div>';
   }
@@ -660,7 +662,6 @@ class Widget:
 
     def poll_procs(self):
         """추가 계정들의 state.json 을 모아 오고, 꺼진 읽기 프로그램은 다시 켬"""
-        save_json(ALIVE, {"ts": time.time()})
         changed = False
         for a in list(self.accounts):
             aid = a["id"]
@@ -771,7 +772,14 @@ class Widget:
             time.sleep(1)
 
     # ── 읽기 ─────────────────────────────
+    def beat(self):
+        """위젯 본체가 살아 있다는 표시를 5초마다 (긴 읽기 중에도 끊기지 않게 따로 돎)"""
+        while self.alive:
+            save_json(ALIVE, {"ts": time.time()})
+            time.sleep(5)
+
     def loop(self):
+        threading.Thread(target=self.beat, daemon=True).start()
         time.sleep(1.0)
         self.push()
         last = 0
@@ -933,7 +941,7 @@ class Reader:
     def parent_alive(self):
         a = load_json(ALIVE)
         ts = float(a.get("ts") or 0)
-        return time.time() - ts < 60 or time.time() - self.started < 60
+        return time.time() - ts < 90 or time.time() - self.started < 90
 
     def command(self):
         c = load_json(os.path.join(self.dir, "cmd.json"))
