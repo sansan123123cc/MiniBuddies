@@ -19,6 +19,7 @@ from PyQt5.QtWidgets import (
 )
 from minibuddies.catalog import AI_GUIDE
 from minibuddies.runtime import BASE, MCP_HOME
+from minibuddies.ui.window_order import run_native_dialog
 from minibuddies.updates import upd_load, upd_path, upd_save_cfg
 
 
@@ -156,7 +157,7 @@ class IntegrationTabs:
         da, dd = QPushButton("폴더 추가…"), QPushButton("선택 폴더 빼기")
         def _add_dir():
             from PyQt5.QtWidgets import QFileDialog
-            d = QFileDialog.getExistingDirectory(self, "캐릭터가 다룰 수 있는 폴더 고르기")
+            d = run_native_dialog(QFileDialog.getExistingDirectory, self, "캐릭터가 다룰 수 있는 폴더 고르기")
             if d and not self.ask_dirs.findItems(d, Qt.MatchExactly):
                 self.ask_dirs.addItem(os.path.normpath(d))
         da.clicked.connect(_add_dir)

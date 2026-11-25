@@ -10,6 +10,7 @@ from PyQt5.QtWidgets import (
 from minibuddies.authoring.project import SKIN_LIMIT, Skin, validate_skin_id
 from minibuddies.ui.editor.frames import CharacterFrames, read_numbered_images
 from minibuddies.ui.editor.widgets import show_error
+from minibuddies.ui.window_order import run_native_dialog
 
 
 class SkinDetails(QDialog):
@@ -116,7 +117,7 @@ class SkinPanel(QWidget):
         self.edit_skin("", "", {})
 
     def import_folder(self):
-        directory = QFileDialog.getExistingDirectory(self, "번호가 붙은 PNG가 있는 스킨 폴더 선택")
+        directory = run_native_dialog(QFileDialog.getExistingDirectory, self, "번호가 붙은 PNG가 있는 스킨 폴더 선택")
         if not directory:
             return
         folder = Path(directory)

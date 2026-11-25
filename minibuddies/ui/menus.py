@@ -13,6 +13,7 @@ from minibuddies.features.pepero import _pepero_day
 from minibuddies.features import touhou
 from minibuddies.runtime import BASE, _crash_write
 from minibuddies.ui.dialogs import SettingsDialog
+from minibuddies.ui.window_order import native_dialog_open
 
 
 class AppMenus:
@@ -346,6 +347,8 @@ class AppMenus:
 
 
     def open_settings(self, tab=None):
+        if native_dialog_open() or QApplication.activeModalWidget() is not None:
+            return
         d = self.settings_dlg
         try:
             if d is not None and d.isVisible():          # 이미 열려 있으면 앞으로만

@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import QFileDialog, QFormLayout, QHBoxLayout, QLabel, QList
 
 from minibuddies.authoring.project import FRAME_LIMIT, read_image
 from minibuddies.ui.editor.widgets import SpritePreview, image_file, show_error, spin
+from minibuddies.ui.window_order import run_native_dialog
 
 FRAME_NAMES = {0: "기본 자세", 1: "걷기", 2: "걷기", 3: "걷기", 4: "구르기", 5: "떨어지기", 6: "착지", 7: "잠자기",
                8: "달리기", 9: "달리기", 10: "점프", 11: "환호", 12: "손 흔들기", 13: "매달리기", 14: "올라가기",
@@ -83,7 +84,7 @@ class CharacterFrames(QWidget):
             self.store({number: data}, number)
 
     def add_many(self):
-        files, _ = QFileDialog.getOpenFileNames(self, "번호가 붙은 PNG 프레임 가져오기", "", "PNG (*.png)")
+        files, _ = run_native_dialog(QFileDialog.getOpenFileNames, self, "번호가 붙은 PNG 프레임 가져오기", "", "PNG (*.png)")
         if not files:
             return
         try:

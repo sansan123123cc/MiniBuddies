@@ -16,6 +16,7 @@ from minibuddies.ui.editor.frames import CharacterFrames
 from minibuddies.ui.editor.rules import RuleList
 from minibuddies.ui.editor.skins import SkinPanel
 from minibuddies.ui.editor.widgets import SpritePreview, image_file, show_error
+from minibuddies.ui.window_order import run_native_dialog
 
 PACK_FILTER = "MiniBuddies 팩 (*.mbpack *.zip)"
 PACK_ERRORS = (OSError, ValueError, TypeError, KeyError, AttributeError, RuntimeError, BadZipFile)
@@ -269,7 +270,7 @@ class PackEditor(QDialog):
 
     def open_pack(self):
         try:
-            path, _ = QFileDialog.getOpenFileName(self, "MiniBuddies 팩 가져오기", "", PACK_FILTER)
+            path, _ = run_native_dialog(QFileDialog.getOpenFileName, self, "MiniBuddies 팩 가져오기", "", PACK_FILTER)
             if not path:
                 return
             info, cover = inspect_archive(path)
@@ -282,7 +283,8 @@ class PackEditor(QDialog):
             self.import_button.setFocus(Qt.OtherFocusReason)
 
     def open_legacy(self):
-        path, _ = QFileDialog.getOpenFileName(self, "기존 플러그인 열기", str(self.app.plugins.root), "플러그인 (plugin.json)")
+        path, _ = run_native_dialog(QFileDialog.getOpenFileName, self, "기존 플러그인 열기",
+                                    str(self.app.plugins.root), "플러그인 (plugin.json)")
         if path and self.discard_ok():
             try:
                 self.load(load_legacy(Path(path).parent))
@@ -298,7 +300,7 @@ class PackEditor(QDialog):
     def export(self):
         preview = self.prepare()
         suggested = (self.project.id or "minibuddies-pack") + EXTENSION
-        path, _ = QFileDialog.getSaveFileName(self, "MiniBuddies 팩 내보내기", suggested, PACK_FILTER)
+        path, _ = run_native_dialog(QFileDialog.getSaveFileName, self, "MiniBuddies 팩 내보내기", suggested, PACK_FILTER)
         if not path:
             return
         target = Path(path)

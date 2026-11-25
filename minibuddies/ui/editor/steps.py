@@ -9,6 +9,7 @@ from PyQt5.QtWidgets import (
 
 from minibuddies.plugins.scenes import RGB
 from minibuddies.ui.editor.widgets import SpritePreview, image_file, options, show_error, spin
+from minibuddies.ui.window_order import run_native_dialog
 
 PRESETS = (
     ("회전 구슬", "seal"), ("빛줄기", "spark"), ("갈라지는 빛", "moon"),
@@ -76,7 +77,7 @@ class StepDialog(QDialog):
             self.refresh()
 
     def add_color(self):
-        color = QColorDialog.getColor(QColor("#ff7990"), self, "효과 색상")
+        color = run_native_dialog(QColorDialog.getColor, QColor("#ff7990"), self, "효과 색상")
         if color.isValid():
             colors = [part.strip() for part in self.colors.text().split(",") if part.strip()]
             self.colors.setText(", ".join([*colors[:5], color.name()]))

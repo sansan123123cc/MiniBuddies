@@ -5,6 +5,7 @@ from PyQt5.QtGui import QImageReader, QPixmap
 from PyQt5.QtWidgets import QComboBox, QFileDialog, QLabel, QMessageBox, QSpinBox
 
 from minibuddies.authoring.project import read_image
+from minibuddies.ui.window_order import run_native_dialog
 
 
 def show_error(parent, error):
@@ -14,7 +15,7 @@ def show_error(parent, error):
 
 
 def image_file(parent):
-    path, _ = QFileDialog.getOpenFileName(parent, "스프라이트 PNG 고르기", "", "PNG (*.png)")
+    path, _ = run_native_dialog(QFileDialog.getOpenFileName, parent, "스프라이트 PNG 고르기", "", "PNG (*.png)")
     if not path:
         return None
     try:

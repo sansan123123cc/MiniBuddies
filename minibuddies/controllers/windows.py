@@ -4,7 +4,7 @@ import datetime
 import os
 import sys
 from PyQt5.QtCore import QTimer, Qt
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWidgets import QApplication, QDialog, QMenu
 from minibuddies.catalog import APP_NAME
 from minibuddies.desktop import (
     CHAR_SCREEN,
@@ -18,6 +18,7 @@ from minibuddies.desktop import (
 )
 from minibuddies.runtime import ENTRY_SCRIPT, _crash_write
 from minibuddies.ui.dialogs import HistoryDialog, SettingsDialog
+from minibuddies.ui.window_order import native_dialog_open, owner_depth
 
 
 class WindowController:
@@ -112,15 +113,18 @@ class WindowController:
         self.save_cfg()
 
     def pet_windows(self):
-        from PyQt5.QtWidgets import QDialog, QMenu
         return [w for w in QApplication.topLevelWidgets()
                 if w.isVisible() and not isinstance(w, (QDialog, QMenu)) and w.windowFlags() & Qt.Tool]
 
     def keep_on_top(self, force=False):
         # 켜져 있으면 매번 다시 맨 위로: 메신저처럼 스스로 '맨 위'인 창이 활성화되면 먼저 뜬 펫 창이 그 뒤로 밀리기 때문
-        from PyQt5.QtWidgets import QDialog, QMenu
+        if native_dialog_open():
+            return
         if QApplication.activePopupWidget() is not None and not force:
             return                                       # 우클릭 메뉴·드롭다운이 열려 있는 동안엔 창 순서를 건드리지 않음 (드롭다운이 닫히거나 가려짐)
+        if QApplication.activeModalWidget() is not None:
+            self.raise_popups()
+            return
         force = force or self.on_top
         for w in self.pet_windows():
             try:
@@ -146,19 +150,25 @@ class WindowController:
 
     def raise_popups(self):
         """우클릭 메뉴·환경설정·물어보기 창은 언제나 펫(캐릭터·말풍선)보다 위에"""
-        from PyQt5.QtWidgets import QDialog, QMenu
-        dialogs, pops = [], []
+        if native_dialog_open():
+            return
+        modal = QApplication.activeModalWidget()
+        if modal is not None and not modal.isVisible():
+            return
+        dialogs = [modal] if modal is not None else []
+        pops = []
         for w in QApplication.topLevelWidgets():
             if not w.isVisible():
                 continue
             if isinstance(w, QMenu) or w.windowType() in (Qt.Popup, Qt.ToolTip):
                 pops.append(w)                           # 드롭다운 목록·메뉴는 맨 마지막에 (환경설정 창이 덮지 않게)
-            elif isinstance(w, QDialog):
+            elif modal is None and isinstance(w, QDialog):
                 if isinstance(w, (SettingsDialog, HistoryDialog)) and not w.isActiveWindow():
                     self.demote(w)                   # 다른 창을 보고 있으면 환경설정은 그 창 뒤로 (항상 위 X)
                     continue
                 dialogs.append(w)
-        for w in dialogs + pops:
+        # Qt does not specify the order of topLevelWidgets(). Owners go first and popups go last.
+        for w in sorted(dialogs, key=owner_depth) + sorted(pops, key=owner_depth):
             try:
                 set_topmost(w.winId(), True, True)
             except Exception:
