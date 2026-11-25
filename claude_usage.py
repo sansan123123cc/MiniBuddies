@@ -10,6 +10,9 @@
   계정마다 이름·색을 붙여 구분하고, 삭제하면 그 계정의 로그인 정보(저장소 폴더)도 같이 지움
 - NovelAI 도 같이: 위젯 전용 브라우저로 novelai.net 에 한 번 로그인해 두면, 그 페이지 안에서 구독 상태
   (V5 같은 최신 모델의 남은 사용량 %, 다음 1% 충전까지 시간, Anlas)만 읽어 옴. 로그인 정보는 페이지 밖으로 안 나감
+- NovelAI 계정 여러 개: 첫 계정은 예전처럼(토큰 또는 로그인 창), 추가 계정은 계정별 영구 API 토큰(pst-…)으로 읽음
+- ChatGPT·Gemini: 구글 로그인은 위젯 안 브라우저에서 막혀 있어서, 이 PC 의 크롬(엣지)을 위젯 전용 프로필로 따로 띄워
+  로그인하고 평소엔 화면 없이 사용량 페이지 글자만 읽음 (usage_browser.py)
 """
 import os, sys, json, time, re, threading, datetime
 
@@ -26,6 +29,13 @@ ACC_DIR = os.path.join(DATA, "accounts")         # 추가 계정별 폴더 (web 
 ALIVE = os.path.join(DATA, "alive.json")         # 위젯 본체가 살아 있다는 표시 (읽기 프로그램이 보고 스스로 꺼짐)
 COLORS = ["#5b8def", "#e0679a", "#2fb380", "#f09a30", "#8b6cf0", "#1fb5c9", "#c9792f", "#7a8aa0"]
 MAIN = "main"
+NAI_ACCTS = os.path.join(DATA, "nai_accounts.json")   # NovelAI 계정 목록 [{id, name, color}]
+NAI_TOK_DIR = os.path.join(DATA, "nai_tokens")         # 추가 NovelAI 계정 토큰 (<id>.txt)
+try:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from usage_browser import RealBrowser, SITES as AI_SITES
+except Exception:                                      # 파일이 아직 없으면 ChatGPT·Gemini 칸만 안 됨
+    RealBrowser, AI_SITES = None, {"gpt": {"name": "ChatGPT"}, "gem": {"name": "Gemini"}}
 
 PCT = re.compile(r"(\d{1,3})\s*%\s*(사용|used)", re.I)
 RESET = re.compile(r"(초기화|reset)", re.I)
@@ -81,12 +91,29 @@ WHO_JS = r"""(function(){window.__who=null;fetch('/api/account',{credentials:'in
 .catch(function(){window.__who={e:'',n:''}});return 1})()"""
 
 
-def nai_token():
+def nai_tok_path(aid=MAIN):
+    return NAI_TOKEN if aid == MAIN else os.path.join(NAI_TOK_DIR, re.sub(r"[^A-Za-z0-9_-]", "", aid) + ".txt")
+
+
+def nai_token(aid=MAIN):
     try:
-        with open(NAI_TOKEN, encoding="utf-8") as f:
+        with open(nai_tok_path(aid), encoding="utf-8") as f:
             return f.read().strip()
     except Exception:
         return ""
+
+
+def set_nai_token(aid, tok):
+    p = nai_tok_path(aid)
+    try:
+        if tok:
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            with open(p, "w", encoding="utf-8") as f:
+                f.write(tok)
+        elif os.path.exists(p):
+            os.remove(p)
+    except Exception:
+        pass
 
 
 def nai_fetch(token):
@@ -151,9 +178,9 @@ def load_json(path):
         return {}
 
 
-def load_accounts():
-    """Claude 계정 목록. 처음엔 예전 로그인(web 저장소)을 쓰는 'main' 하나"""
-    a = load_json(ACCTS)
+def load_accounts(path=ACCTS):
+    """계정 목록 (Claude·NovelAI 같은 모양). 처음엔 예전 로그인을 쓰는 'main' 하나"""
+    a = load_json(path)
     lst = a.get("list") if isinstance(a, dict) else None
     if not isinstance(lst, list):
         lst = [{"id": MAIN, "name": "", "color": COLORS[0]}]
@@ -167,8 +194,8 @@ def load_accounts():
     return out
 
 
-def save_accounts(lst):
-    save_json(ACCTS, {"list": lst})
+def save_accounts(lst, path=ACCTS):
+    save_json(path, {"list": lst})
 
 
 def acc_dir(aid):
@@ -334,26 +361,39 @@ input.tx{flex:1;min-width:0;border:1px solid var(--ln);border-radius:6px;padding
 <div id="h"><span class="pywebview-drag-region">사용량</span><button onclick="pywebview.api.refresh()" title="지금 새로 읽기">↻</button><button id="gb" onclick="togSet()" title="보일 것 고르기">⚙</button><button onclick="pywebview.api.close()" title="닫기">×</button></div>
 <div id="set" hidden><div class="s">보일 것 고르기</div>
 <label><input type="checkbox" id="oc" onchange="setShow('claude',this.checked)">Claude 사용량</label>
-<label><input type="checkbox" id="on" onchange="setShow('nai',this.checked)">NovelAI 사용량</label></div>
+<label><input type="checkbox" id="on" onchange="setShow('nai',this.checked)">NovelAI 사용량</label>
+<label><input type="checkbox" id="og" onchange="setShow('gpt',this.checked)">ChatGPT 사용량 <span class="s">(크롬 필요)</span></label>
+<label><input type="checkbox" id="om" onchange="setShow('gem',this.checked)">Gemini 사용량 <span class="s">(크롬 필요)</span></label></div>
 <div class="sec" id="sc"><div class="st"><span>Claude 사용량</span><button id="ab" onclick="addOpen()" title="Claude 계정 하나 더 추가">＋ 계정</button></div>
 <div id="add" class="row" hidden><input class="tx" id="an" maxlength="16" placeholder="이 계정 이름 (예: 회사·개인)"><button onclick="addGo()">추가</button><button class="no" onclick="addOpen(false)">취소</button></div>
 <div id="accs" class="col"><div class="s">불러오는 중…</div></div></div>
-<div class="sec" id="sn"><div class="st"><span>NovelAI 사용량</span><span id="nb" style="flex:none;display:flex;gap:4px"></span></div><div id="nai" class="col"></div></div>
+<div class="sec" id="sn"><div class="st"><span>NovelAI 사용량</span><button onclick="naddOpen()" title="NovelAI 계정 하나 더 추가 (API 토큰으로)">＋ 계정</button></div>
+<div id="nadd" class="col" hidden><div class="row"><input class="tx" id="nan" maxlength="16" placeholder="이 계정 이름 (예: 회사·개인)"></div>
+<div class="row"><input class="tx" id="nat" type="password" placeholder="pst-… 영구 API 토큰"><button onclick="naddGo()">추가</button><button class="no" onclick="naddOpen(false)">취소</button></div>
+<div class="s">토큰: NovelAI → 설정(⚙) → Account → Get Persistent API Token</div></div>
+<div id="nai" class="col"></div></div>
+<div class="sec" id="sx"><div class="st"><span>ChatGPT · Gemini</span></div><div id="ai" class="col"></div></div>
 <div id="f"></div></div>
 <script>
-var D={},SH={claude:true,nai:true},UI={del:null,ren:null};
+var D={},SH={claude:true,nai:true,gpt:false,gem:false},UI={del:null,ren:null,ndel:null,nren:null};
 function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function bar(label,val,pct,c,sub){return '<div class="r"><div class="t"><b>'+esc(label)+'</b><span>'+val+'</span></div><div class="k"><i style="width:'+pct+'%'+(c?';background:'+c:'')+'"></i></div>'+(sub?'<div class="s">'+esc(sub)+'</div>':'')+'</div>'}
 function fit(){setTimeout(function(){try{pywebview.api.fit(Math.ceil(document.getElementById('p').getBoundingClientRect().height)+2)}catch(e){}},30)}
 function togSet(){var e=document.getElementById('set');e.hidden=!e.hidden;fit()}
-function setShow(k,on){SH[k]=on;if(!SH.claude&&!SH.nai){SH[k==='claude'?'nai':'claude']=true}pywebview.api.set_show(SH.claude,SH.nai);paint()}
+function setShow(k,on){SH[k]=on;if(!SH.claude&&!SH.nai&&!SH.gpt&&!SH.gem){SH.claude=true}D.show={claude:SH.claude,nai:SH.nai,gpt:SH.gpt,gem:SH.gem};pywebview.api.set_show(D.show);paint()}
+function naddOpen(on){var e=document.getElementById('nadd');e.hidden=(on===false)?true:!e.hidden;if(!e.hidden){document.getElementById('nan').value='';document.getElementById('nat').value='';document.getElementById('nan').focus()}fit()}
+function naddGo(){var n=document.getElementById('nan'),t=document.getElementById('nat');pywebview.api.nai_add((n.value||'').trim(),(t.value||'').trim());n.value=t.value='';document.getElementById('nadd').hidden=true;fit()}
+function nrenOpen(id){UI.nren=id;UI.ndel=null;paint();var i=document.getElementById('nrn');if(i){i.focus();i.select()}}
+function nrenGo(id){var i=document.getElementById('nrn');pywebview.api.nai_rename(id,(i&&i.value||'').trim());UI.nren=null}
+function ndelOpen(id){UI.ndel=id;UI.nren=null;paint()}
+function ndelGo(id){UI.ndel=null;pywebview.api.nai_delete(id)}
 function addOpen(on){var e=document.getElementById('add');e.hidden=(on===false)?true:!e.hidden;if(!e.hidden){var i=document.getElementById('an');i.value='';i.focus()}fit()}
 function addGo(){var i=document.getElementById('an');pywebview.api.acc_add((i.value||'').trim());i.value='';document.getElementById('add').hidden=true;fit()}
 function renOpen(id){UI.ren=id;UI.del=null;paint();var i=document.getElementById('rn');if(i){i.focus();i.select()}}
 function renGo(id){var i=document.getElementById('rn');pywebview.api.acc_rename(id,(i&&i.value||'').trim());UI.ren=null}
 function delOpen(id){UI.del=id;UI.ren=null;paint()}
 function delGo(id){UI.del=null;pywebview.api.acc_delete(id)}
-function cancel(){UI.del=UI.ren=null;paint()}
+function cancel(){UI.del=UI.ren=UI.ndel=UI.nren=null;paint()}
 function accHtml(a,i,n,dup){
   var nm=a.name||('계정 '+(i+1)),rows=a.rows||[],h='';
   h+='<div class="acc" style="--c:'+a.color+'"><div class="ah">';
@@ -378,37 +418,71 @@ function accHtml(a,i,n,dup){
   if(a.time)h+='<div class="s" style="text-align:right;margin-top:-3px">갱신 '+esc(a.time)+'</div>';
   return h+'</div>';
 }
-function renderNai(n){
-  var el=document.getElementById('nai'),nb=document.getElementById('nb');
-  var a=document.activeElement;if(a&&a.id==='nt'&&a.value)return;
-  n=n||{need_login:true};
-  var lg='<button onclick="pywebview.api.nai_login()" title="이메일 계정 로그인 창 열기/닫기">'+(n.shown?'로그인 창 닫기':'로그인')+'</button>';
-  if(n.need_login||n.pct==null){
-    nb.innerHTML=lg;
-    el.innerHTML='<div class="s">'+esc(n.status||'API 토큰을 넣으면 V5 남은 양·Anlas 가 보여요')+'</div>'
-      +'<div class="t" style="gap:4px"><input id="nt" class="tx" type="password" placeholder="pst-… 토큰 붙여넣기"><button onclick="saveTok()">저장</button></div>';return}
-  nb.innerHTML=n.tok?'<button onclick="clearTok()" title="저장한 토큰 지우기">토큰 지우기</button>':(n.shown?lg:'');
-  var p=n.pct,c=p<=5?'var(--hot)':p<=20?'var(--warn)':'var(--ok)';
-  el.innerHTML=bar('V5 남은 양',p+'%'+(n.imgs!=null?' · 약 '+Number(n.imgs).toLocaleString()+'장':''),p,c,n.next)
-    +'<div class="t"><b>Anlas</b><span>'+Number(n.anlas||0).toLocaleString()+'</span></div>';
+function naiHtml(a,i,n){
+  var nm=a.name||(n>1?'계정 '+(i+1):'NovelAI'),h='<div class="acc" style="--c:'+a.color+'"><div class="ah">',q="\\'"+a.id+"\\'";
+  h+='<button class="dot" title="색 바꾸기" onclick="pywebview.api.nai_color('+q+')"></button>';
+  var need=a.need_login||a.pct==null;
+  if(UI.nren===a.id){
+    h+='<input class="tx" id="nrn" maxlength="16" value="'+esc(a.name)+'" placeholder="계정 '+(i+1)+'" onkeydown="if(event.key===\\'Enter\\')nrenGo('+q+');if(event.key===\\'Escape\\')cancel()"><button onclick="nrenGo('+q+')">저장</button><button class="no" onclick="cancel()">취소</button></div>';
+  }else{
+    h+='<span class="tag">'+(n>1?'<span class="no2">'+(i+1)+'</span>':'')+'<u title="'+esc(nm)+'">'+esc(nm)+'</u></span>';
+    if(a.id==='main'&&(need||a.shown))h+='<button onclick="pywebview.api.nai_login()" title="이메일 계정 로그인 창 열기/닫기">'+(a.shown?'창 닫기':'로그인')+'</button>';
+    h+='<button class="ic" title="이름 바꾸기" onclick="nrenOpen('+q+')">✎</button>';
+    h+='<button class="ic" title="계정 삭제" onclick="ndelOpen('+q+')">🗑</button></div>';
+  }
+  if(UI.ndel===a.id)h+='<div class="ask"><div class="s" style="color:#a0474b">「'+esc(nm)+'」 계정을 지울까요? 이 위젯에 저장한 토큰'+(a.id==='main'?'·로그인':'')+'도 같이 지워져요.</div><div class="t"><button class="del" onclick="ndelGo('+q+')">삭제</button><button class="no" onclick="cancel()">취소</button></div></div>';
+  if(need){
+    h+='<div class="s">'+esc(a.status||(a.id==='main'?'API 토큰을 넣거나 로그인하면 V5 남은 양·Anlas 가 보여요':'이 계정의 API 토큰(pst-…)을 넣어 주세요'))+'</div>';
+    h+='<div class="row"><input id="nt_'+a.id+'" class="tx" type="password" placeholder="pst-… 토큰 붙여넣기" onkeydown="if(event.key===\\'Enter\\')saveTok('+q+')"><button onclick="saveTok('+q+')">저장</button></div>';
+  }else{
+    var p=a.pct,c=p<=5?'var(--hot)':p<=20?'var(--warn)':'';
+    h+=bar('V5 남은 양',p+'%'+(a.imgs!=null?' · 약 '+Number(a.imgs).toLocaleString()+'장':''),p,c,a.next);
+    h+='<div class="t"><b>Anlas</b><span>'+Number(a.anlas||0).toLocaleString()+'</span></div>';
+  }
+  if(a.time||(a.tok&&!need))h+='<div class="t s" style="align-items:center">'+(a.tok&&!need?'<button class="no" style="font-size:11px;padding:0 6px" onclick="pywebview.api.nai_token('+q+',\\'\\')" title="저장한 토큰 지우기">토큰 지우기</button>':'<span></span>')+'<span>'+(a.time?'갱신 '+esc(a.time):'')+'</span></div>';
+  return h+'</div>';
 }
-function clearTok(){pywebview.api.nai_token('')}
-function saveTok(){var i=document.getElementById('nt');var v=(i&&i.value||'').trim();if(!v)return;i.value='';pywebview.api.nai_token(v)}
+function renderNai(list){
+  var a=document.activeElement;if(a&&/^(nt_|nrn|nan|nat)/.test(a.id||'')&&a.value)return;
+  list=list||[];var h='';
+  list.forEach(function(x,i){h+=naiHtml(x,i,list.length)});
+  if(!list.length)h='<div class="s">등록된 계정이 없어요 — ＋ 계정으로 추가해 주세요</div>';
+  document.getElementById('nai').innerHTML=h;
+}
+var AIC={gpt:'#10a37f',gem:'#4f7cf0'},AIN={gpt:'ChatGPT',gem:'Gemini'};
+function aiHtml(k,a){
+  a=a||{};var rows=a.rows||[],h='<div class="acc" style="--c:'+AIC[k]+'"><div class="ah"><span class="dot" style="cursor:default"></span>';
+  h+='<span class="tag"><u>'+AIN[k]+'</u></span>';
+  if(a.need_login||!rows.length||a.login)h+='<button onclick="pywebview.api.ai_login(\\''+k+'\\')" title="'+esc(D.browser||'크롬')+' 로그인 창 열기/닫기">'+(a.login?'창 닫기':'로그인')+'</button>';
+  h+='</div>';
+  if(a.login)h+='<div class="tip">💡 따로 열린 <b>'+esc(D.browser||'크롬')+' 창</b>에서 로그인해 주세요 — <b>구글 로그인도 돼요</b>. 사용량 숫자가 보이면 창이 저절로 닫혀요.</div>';
+  rows.forEach(function(r){h+=bar(r.label,r.pct+'%',r.pct,r.pct>=95?'var(--hot)':r.pct>=80?'var(--warn)':'',r.reset)});
+  if(k==='gpt'&&rows.length)h+='<div class="s">Codex·Work 공용 한도예요 (일반 채팅 한도는 안 보여 줘요)</div>';
+  if(!rows.length)h+='<div class="s">'+esc(a.status||'아직 숫자가 없어요')+'</div>';
+  else if(a.status)h+='<div class="s">'+esc(a.status)+'</div>';
+  if(a.time)h+='<div class="s" style="text-align:right;margin-top:-3px">갱신 '+esc(a.time)+'</div>';
+  return h+'</div>';
+}
+function saveTok(id){var i=document.getElementById('nt_'+id);var v=(i&&i.value||'').trim();if(!v)return;i.value='';pywebview.api.nai_token(id,v)}
 function paint(){
   var d=D,accs=d.accounts||[];
-  if(d.show){SH.claude=d.show.claude!==false;SH.nai=d.show.nai!==false}
+  if(d.show)takeShow(d.show);
   document.getElementById('oc').checked=SH.claude;document.getElementById('on').checked=SH.nai;
+  document.getElementById('og').checked=SH.gpt;document.getElementById('om').checked=SH.gem;
   document.getElementById('sc').hidden=!SH.claude;document.getElementById('sn').hidden=!SH.nai;
+  document.getElementById('sx').hidden=!(SH.gpt||SH.gem);
   var seen={},h='';
   accs.forEach(function(a,i){var e=(a.email||'').toLowerCase(),dup=!!(e&&seen[e]);if(e)seen[e]=1;h+=accHtml(a,i,accs.length,dup)});
   if(!accs.length)h='<div class="s">등록된 계정이 없어요 — ＋ 계정으로 추가해 주세요</div>';
   document.getElementById('accs').innerHTML=h;
-  renderNai(d.nai);
-  document.getElementById('f').textContent=(!SH.claude&&d.nai&&d.nai.time)?'갱신 '+d.nai.time:'';
+  renderNai(d.nais);
+  var ai=d.ai||{},x='';['gpt','gem'].forEach(function(k){if(SH[k])x+=aiHtml(k,ai[k])});
+  document.getElementById('ai').innerHTML=x;
   fit();
 }
-function render(d){D=d;if(d.show){SH.claude=d.show.claude!==false;SH.nai=d.show.nai!==false}
-  var a=document.activeElement;if(a&&(a.id==='rn'||a.id==='an')){renderNai(d.nai);return}paint()}
+function takeShow(s){SH.claude=s.claude!==false;SH.nai=s.nai!==false;SH.gpt=!!s.gpt;SH.gem=!!s.gem}
+function render(d){D=d;if(d.show)takeShow(d.show);
+  var a=document.activeElement;if(a&&(a.id==='rn'||a.id==='an')){renderNai(d.nais);return}paint()}
 </script></body></html>"""
 
 
@@ -424,7 +498,8 @@ class Widget:
         self.nw_shown = False
         self.data = load_json(OUT) or {}
         sh = load_json(SHOW) or {}
-        self.show = {"claude": sh.get("claude", True) is not False, "nai": sh.get("nai", True) is not False}
+        self.show = {"claude": sh.get("claude", True) is not False, "nai": sh.get("nai", True) is not False,
+                     "gpt": sh.get("gpt") is True, "gem": sh.get("gem") is True}
         self.kick = threading.Event()
         self.alive = True
         self.lock = threading.RLock()
@@ -444,6 +519,24 @@ class Widget:
         self.procs = {}               # 추가 계정 읽기 프로그램 {id: Popen}
         self.restarts = {}
         self.cmd_seq = 0
+        # NovelAI 계정들. 예전 usage.json 의 nai(계정 하나)는 main 으로 이어받음
+        self.naccs = load_accounts(NAI_ACCTS)
+        save_accounts(self.naccs, NAI_ACCTS)
+        oldn = self.data.get("nai_accts") if isinstance(self.data.get("nai_accts"), dict) else {}
+        self.nst = {}
+        for a in self.naccs:
+            n = oldn.get(a["id"])
+            if a["id"] == MAIN and not oldn and isinstance(self.data.get("nai"), dict):
+                n = self.data.get("nai")
+            self.nst[a["id"]] = dict(n) if isinstance(n, dict) and n else {"need_login": True}
+        # ChatGPT·Gemini (진짜 브라우저로 읽음)
+        olda = self.data.get("ai") if isinstance(self.data.get("ai"), dict) else {}
+        self.ai = {k: dict(blank_state(), **(olda.get(k) or {})) for k in AI_SITES}
+        self.rb = None                # usage_browser.RealBrowser
+        self.ai_kick = threading.Event()
+        self.ai_now = True            # 다음 바퀴에 바로 읽기
+        self.ai_lg = None             # 지금 로그인 창을 띄운 사이트 ('gpt'/'gem')
+        self.ai_first = set()         # 방금 켠 사이트 — 로그인이 필요하면 로그인 창을 바로 띄움
 
     def login_title(self, aid):
         a = self.acc(aid)
@@ -465,7 +558,6 @@ class Widget:
     # ── 창 ─────────────────────────────
     def make_ui(self):
         pos = load_json(WIN)
-        self.data.setdefault("nai", {"need_login": True})
         self.ui = self.wv.create_window("사용량", html=UI_HTML, js_api=Api(self), width=270, height=self.height(),
                                         x=pos.get("x"), y=pos.get("y"), frameless=True, easy_drag=False,
                                         on_top=True, resizable=False, background_color="#FFF7FA")
@@ -493,19 +585,24 @@ class Widget:
             pass
         self.push()
 
-    def read_nai(self, wait=24):
-        """구독 상태를 물어봄 → data['nai']. 성공하면 True
+    def read_nai(self, aid=MAIN, wait=24):
+        """구독 상태를 물어봄 → nst[aid]. 성공하면 True
         1) 저장한 영구 API 토큰이 있으면 그걸로 직접 (구글 로그인 계정도 됨)
-        2) 없으면 위젯 전용 창의 novelai.net 로그인으로 (이메일·비밀번호 로그인만 됨 — 구글 로그인 팝업은 위젯 창에서 못 돌아옴)"""
-        tok = nai_token()
+        2) 없으면(첫 계정만) 위젯 전용 창의 novelai.net 로그인으로 (이메일·비밀번호 로그인만 됨)"""
+        if aid not in self.nst:
+            return False
+        tok = nai_token(aid)
         if tok:
             n, st = nai_fetch(tok)
             if n:
-                self.set_nai(n)
-                if self.nw_shown:
+                self.set_nai(aid, n)
+                if aid == MAIN and self.nw_shown:
                     self.show_nw(False)
                 return True
-            self.set_nai({"need_login": True, "status": st})
+            self.set_nai(aid, {"need_login": True, "status": st})
+            return False
+        if aid != MAIN:
+            self.set_nai(aid, {"need_login": True})
             return False
         if self.nw is None:
             self.make_nw()
@@ -519,7 +616,7 @@ class Widget:
         except Exception:
             return False
         if st == "login":
-            self.set_nai({"need_login": True})
+            self.set_nai(MAIN, {"need_login": True})
             return False
         for _ in range(wait):
             time.sleep(1.0)
@@ -534,31 +631,40 @@ class Widget:
             if r.get("ok"):
                 n = nai_parse(r.get("j"))
                 if n is None:
-                    self.set_nai({"need_login": True})
+                    self.set_nai(MAIN, {"need_login": True})
                     return False
-                self.set_nai(n)
+                self.set_nai(MAIN, n)
                 if self.nw_shown:
                     self.show_nw(False)
                 return True
             if r.get("login"):
-                self.set_nai({"need_login": True})
+                self.set_nai(MAIN, {"need_login": True})
                 return False
-            self.set_nai(dict(self.data.get("nai") or {}, status="NovelAI 를 못 읽었어요"))
+            self.set_nai(MAIN, dict(self.nst.get(MAIN) or {}, status="NovelAI 를 못 읽었어요"))
             return False
         return False
 
-    def set_nai(self, n):
+    def set_nai(self, aid, n):
         n = dict(n)
         n["time"] = datetime.datetime.now().strftime("%H:%M")
-        self.data["nai"] = n
+        with self.lock:
+            if aid not in self.nst:
+                return
+            self.nst[aid] = n
         self.save()
         self.push()
 
     def quit(self):
         self.alive = False
         self.kick.set()
+        self.ai_kick.set()
         for aid in list(self.procs):
             self.send(aid, "quit")
+        if self.rb is not None:
+            try:
+                self.rb.stop()
+            except Exception:
+                pass
         for w in list(self.wv.windows):
             try:
                 w.destroy()
@@ -598,21 +704,32 @@ class Widget:
                 s = self.st.get(a["id"]) or {}
                 nm = a["name"] or "계정 %d" % (i + 1)
                 for r in s.get("rows") or []:
-                    rows.append(dict(r, label=(nm + " · " + r["label"]) if many else r["label"]))
+                    rows.append(dict(r, label=(nm + " · " + r["label"]) if many else r["label"], svc="Claude"))
                 ts = max(ts, float(s.get("ts") or 0))
+            for k, s in self.ai.items():
+                if not self.show.get(k):
+                    continue
+                for r in s.get("rows") or []:
+                    rows.append(dict(r, svc=AI_SITES[k]["name"]))
+                ts = max(ts, float(s.get("ts") or 0))
+            first = self.nst.get(MAIN) or (self.nst.get(self.naccs[0]["id"]) if self.naccs else None)
             out = dict(self.data, rows=rows, ts=ts or self.data.get("ts", 0),
-                       accounts={a["id"]: self.st.get(a["id"]) or {} for a in self.accounts})
+                       accounts={a["id"]: self.st.get(a["id"]) or {} for a in self.accounts},
+                       nai=first, nai_accts={a["id"]: self.nst.get(a["id"]) or {} for a in self.naccs},
+                       ai={k: {x: v for x, v in s.items() if x != "login"} for k, s in self.ai.items()})
             out.pop("cw", None)
             self.data = out
             save_json(OUT, out)
 
     def height(self):
         n = sum(max(1, len((self.st.get(a["id"]) or {}).get("rows") or [])) for a in self.accounts) or 1
-        nai = self.data.get("nai") or {}
-        extra = 0 if not nai else (72 if nai.get("need_login") or nai.get("pct") is None else 82)
-        if extra == 82 and (nai.get("shown") or nai.get("tok")):
-            extra += 24
-        return 70 + 46 * n + 46 * len(self.accounts) + extra
+        extra = 0
+        if self.show.get("nai"):
+            extra += 40 + 110 * max(1, len(self.naccs))
+        for k in AI_SITES:
+            if self.show.get(k):
+                extra += 40 + 46 * max(1, len(self.ai[k].get("rows") or []))
+        return min(900, 70 + 46 * n + 46 * len(self.accounts) + extra)
 
     def push(self):
         try:
@@ -627,10 +744,16 @@ class Widget:
                         else:
                             s["cw"] = bool(s.get("shown"))
                         accs.append(s)
-                    nai = self.data.get("nai")
-                    if nai is not None:
-                        nai = dict(nai, shown=self.nw_shown, tok=bool(nai_token()))
-                    payload = {"accounts": accs, "nai": nai, "show": self.show}
+                    nais = []
+                    for a in self.naccs:
+                        n = dict(self.nst.get(a["id"]) or {"need_login": True})
+                        n.update(a)
+                        n["tok"] = bool(nai_token(a["id"]))
+                        n["shown"] = a["id"] == MAIN and self.nw_shown
+                        nais.append(n)
+                    ai = {k: dict(s, login=self.ai_lg == k) for k, s in self.ai.items()}
+                    bn = self.rb.name if self.rb is not None else "크롬"
+                    payload = {"accounts": accs, "nais": nais, "ai": ai, "show": self.show, "browser": bn}
                 self.ui.evaluate_js("render(%s)" % json.dumps(payload, ensure_ascii=False))
         except Exception:
             pass
@@ -771,6 +894,170 @@ class Widget:
                 break
             time.sleep(1)
 
+    # ── NovelAI 계정 추가·이름·색·삭제 ─────────
+    def nai_add(self, name, tok):
+        with self.lock:
+            used = {a["color"] for a in self.naccs}
+            color = next((c for c in COLORS if c not in used), COLORS[len(self.naccs) % len(COLORS)])
+            ids = {a["id"] for a in self.naccs}
+            aid = MAIN if MAIN not in ids else "n%d" % int(time.time() * 1000)   # 첫 계정 자리가 비면 로그인 창도 쓰는 main
+            self.naccs.append({"id": aid, "name": (name or "")[:16], "color": color})
+            self.nst[aid] = {"need_login": True, "status": "토큰 확인 중…" if tok else ""}
+            save_accounts(self.naccs, NAI_ACCTS)
+            set_nai_token(aid, tok)
+        self.save()
+        self.push()
+        if tok:
+            self.read_nai(aid)
+
+    def nai_rename(self, aid, name):
+        with self.lock:
+            for a in self.naccs:
+                if a["id"] == aid:
+                    a["name"] = (name or "")[:16]
+            save_accounts(self.naccs, NAI_ACCTS)
+        self.save()
+        self.push()
+
+    def nai_recolor(self, aid):
+        with self.lock:
+            for a in self.naccs:
+                if a["id"] == aid:
+                    i = COLORS.index(a["color"]) if a["color"] in COLORS else -1
+                    a["color"] = COLORS[(i + 1) % len(COLORS)]
+            save_accounts(self.naccs, NAI_ACCTS)
+        self.push()
+
+    def nai_delete(self, aid):
+        """목록에서 빼고 저장한 토큰도 지움. 첫 계정은 위젯 창의 novelai.net 로그인도 지움"""
+        with self.lock:
+            self.naccs = [a for a in self.naccs if a["id"] != aid]
+            self.nst.pop(aid, None)
+            save_accounts(self.naccs, NAI_ACCTS)
+        set_nai_token(aid, "")
+        self.save()
+        self.push()
+        if aid == MAIN and self.nw is not None:
+            try:
+                self.nw.evaluate_js("try{localStorage.removeItem('session');sessionStorage.removeItem('session')}catch(e){}")
+                self.nw.load_url(NAI_URL)
+            except Exception:
+                pass
+            if self.nw_shown:
+                self.show_nw(False)
+
+    # ── ChatGPT·Gemini (진짜 브라우저) ─────────
+    def ai_report(self, k, rows=None, status=None, need_login=None):
+        with self.lock:
+            s = self.ai.get(k)
+            if s is None:
+                return
+            if rows is not None:
+                s.update(rows=rows, need_login=False, status="", ts=time.time(),
+                         time=datetime.datetime.now().strftime("%H:%M"))
+            if need_login is not None:
+                s["need_login"] = need_login
+                if need_login:
+                    s["rows"] = []
+            if status is not None:
+                s["status"] = status
+        self.save()
+        self.push()
+
+    def ai_wait(self, sec):
+        self.ai_kick.wait(sec)
+        self.ai_kick.clear()
+
+    def ai_loop(self):
+        """ChatGPT·Gemini 만 따로 도는 줄 (브라우저 띄우고 읽는 동안 Claude·NovelAI 읽기가 안 막히게)"""
+        last, nudged, opened = 0, {}, None
+        while self.alive:
+            want = [k for k in AI_SITES if self.show.get(k)]
+            rb = self.rb
+            if not want or RealBrowser is None:
+                if rb is not None and rb.running():
+                    rb.stop()
+                self.ai_lg = None
+                if want and RealBrowser is None:
+                    for k in want:
+                        if self.ai[k].get("status") != "업데이트를 한 번 더 받아 주세요":
+                            self.ai_report(k, status="업데이트를 한 번 더 받아 주세요")
+                self.ai_wait(5)
+                continue
+            if rb is None:
+                rb = self.rb = RealBrowser(DATA)
+                self.push()
+            if not rb.exe:
+                for k in want:
+                    if self.ai[k].get("status") != "크롬이나 엣지가 있어야 해요 (못 찾았어요)":
+                        self.ai_report(k, status="크롬이나 엣지가 있어야 해요 (못 찾았어요)")
+                self.ai_wait(60)
+                continue
+            lg = self.ai_lg if self.ai_lg in want else None
+            if lg:                                    # 로그인 창 모드
+                if rb.mode != "login":
+                    err = rb.start("login", [AI_SITES[lg]["url"]])
+                    if err:
+                        self.ai_lg = None
+                        self.ai_report(lg, status=err)
+                        continue
+                    opened = lg
+                    self.push()
+                elif not rb.running():                # 사용자가 창을 닫음 → 평소 읽기로
+                    rb.stop()
+                    self.ai_lg, self.ai_now = None, True
+                    self.push()
+                    continue
+                elif opened != lg:                    # 다른 사이트 로그인으로 바꿈 → 그 사이트 탭 열기
+                    opened = lg
+                    rb.tab(lg)
+                rows = rb.watch_login(lg, nudged)
+                if rows:
+                    self.ai_report(lg, rows=rows)
+                    self.ai_lg, self.ai_now = None, True
+                    rb.stop()
+                    self.push()
+                    continue
+                self.ai_wait(2.5)
+                continue
+            if rb.mode == "login":                    # 로그인 창을 위젯에서 닫음
+                rb.stop()
+                self.ai_now = True
+            if not (self.ai_now or time.time() - last >= EVERY):
+                self.ai_wait(3)
+                continue
+            self.ai_now, last = False, time.time()
+            err = rb.start(rb.quiet, ["about:blank"])
+            if err:
+                for k in want:
+                    self.ai_report(k, status=err)
+                continue
+            for k in want:
+                if self.ai_lg or not self.alive:
+                    break
+                if not self.ai[k].get("rows"):
+                    self.ai_report(k, status="읽는 중…")
+                rows, st = rb.read(k)
+                if st == "blocked" and rb.quiet == "hidden":
+                    rb.quiet = "offscreen"            # 화면 없는 모드를 막는 사이트 → 화면 밖 창으로 바꿔 기억
+                    rb.save_cfg(quiet="offscreen")
+                    if not rb.start("offscreen", ["about:blank"]):
+                        rows, st = rb.read(k)
+                if st == "ok":
+                    self.ai_report(k, rows=rows)
+                elif st == "login":
+                    self.ai_report(k, need_login=True, status="로그인이 필요해요 — '로그인' 버튼")
+                    if k in self.ai_first and not self.ai_lg:
+                        self.ai_lg = k                # 방금 켰으면 로그인 창을 바로 띄움
+                elif st == "blocked":
+                    self.ai_report(k, status="사이트가 숨은 창을 막았어요 — 잠시 뒤 다시 읽을게요")
+                else:
+                    self.ai_report(k, status="숫자를 못 읽었어요 (화면이 바뀌었을 수 있어요)")
+                self.ai_first.discard(k)
+            if rb.mode != "login":
+                rb.stop()
+            self.push()
+
     # ── 읽기 ─────────────────────────────
     def beat(self):
         """위젯 본체가 살아 있다는 표시를 5초마다 (긴 읽기 중에도 끊기지 않게 따로 돎)"""
@@ -780,6 +1067,7 @@ class Widget:
 
     def loop(self):
         threading.Thread(target=self.beat, daemon=True).start()
+        threading.Thread(target=self.ai_loop, daemon=True).start()
         time.sleep(1.0)
         self.push()
         last = 0
@@ -792,7 +1080,7 @@ class Widget:
                 self.kick.clear()
                 continue
             if self.nw_shown:                         # NovelAI 로그인 창이 열려 있는 동안: 로그인되면 바로 읽고 창 닫기
-                self.read_nai(wait=4)
+                self.read_nai(MAIN, wait=4)
                 self.kick.wait(3)
                 self.kick.clear()
                 continue
@@ -806,7 +1094,8 @@ class Widget:
                     if st.get("need_login") and not st.get("rows") and not st.get("ts") and m.alive:
                         m.show(True)                  # 처음이면 로그인 창을 바로 보여 줌
                 if self.show["nai"]:
-                    self.read_nai()
+                    for a in list(self.naccs):
+                        self.read_nai(a["id"])
                 continue
             self.kick.wait(3)
 
@@ -827,6 +1116,8 @@ class Api:
             except Exception:
                 pass
         w.kick.set()
+        w.ai_now = True
+        w.ai_kick.set()
 
     def acc_login(self, aid):
         w = self._w
@@ -867,10 +1158,19 @@ class Api:
         except Exception:
             pass
 
-    def set_show(self, claude, nai):
+    def set_show(self, sh):
         w = self._w
-        w.show = {"claude": bool(claude) or not nai, "nai": bool(nai)}
+        sh = sh if isinstance(sh, dict) else {}
+        new = {k: bool(sh.get(k, w.show.get(k))) for k in ("claude", "nai", "gpt", "gem")}
+        if not any(new.values()):
+            new["claude"] = True
+        for k in AI_SITES:
+            if new.get(k) and not w.show.get(k):
+                w.ai_first.add(k)
+                w.ai_now = True
+        w.show = new
         save_json(SHOW, w.show)
+        w.ai_kick.set()
         if not w.show["claude"]:
             if w.main and w.main.shown:
                 w.main.show(False)
@@ -882,23 +1182,34 @@ class Api:
         w.push()
         w.kick.set()                                  # 새로 켠 항목은 바로 읽기
 
-    def nai_token(self, tok):
+    def nai_token(self, aid, tok):
         tok = (tok or "").strip().strip('"').strip()
-        try:
-            os.makedirs(DATA, exist_ok=True)
-            if tok:
-                with open(NAI_TOKEN, "w", encoding="utf-8") as f:
-                    f.write(tok)
-            elif os.path.exists(NAI_TOKEN):
-                os.remove(NAI_TOKEN)
-        except Exception:
-            pass
         w = self._w
+        set_nai_token(aid, tok)
         if tok:
-            w.set_nai({"need_login": True, "status": "토큰 확인 중…"})
-            threading.Thread(target=w.read_nai, daemon=True).start()
+            w.set_nai(aid, {"need_login": True, "status": "토큰 확인 중…"})
+            threading.Thread(target=w.read_nai, args=(aid,), daemon=True).start()
         else:
-            w.set_nai({"need_login": True})
+            w.set_nai(aid, {"need_login": True})
+
+    def nai_add(self, name, tok):
+        tok = (tok or "").strip().strip('"').strip()
+        threading.Thread(target=self._w.nai_add, args=(name, tok), daemon=True).start()
+
+    def nai_rename(self, aid, name):
+        self._w.nai_rename(aid, name)
+
+    def nai_color(self, aid):
+        self._w.nai_recolor(aid)
+
+    def nai_delete(self, aid):
+        threading.Thread(target=self._w.nai_delete, args=(aid,), daemon=True).start()
+
+    def ai_login(self, k):
+        w = self._w
+        w.ai_lg = None if w.ai_lg == k else k
+        w.push()
+        w.ai_kick.set()
 
     def close(self):
         threading.Thread(target=self._w.quit, daemon=True).start()

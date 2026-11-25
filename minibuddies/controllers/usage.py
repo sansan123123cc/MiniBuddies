@@ -135,8 +135,9 @@ class UsageController:
                 continue
             warned.add(key)
             when = f" ({r.get('reset')})" if r.get("reset") else ""
+            svc = r.get("svc") or "Claude"
             if lv == 95:
-                self.usage_note(f"Claude {r.get('label')} 사용량 {pct}%… 거의 다 썼어!{when}", 8)
+                self.usage_note(f"{svc} {r.get('label')} 사용량 {pct}%… 거의 다 썼어!{when}", 8)
             else:
-                self.usage_note(f"Claude {r.get('label')} 사용량이 {pct}% 넘었어~ 조금 아껴 쓰자{when}", 8)
+                self.usage_note(f"{svc} {r.get('label')} 사용량이 {pct}% 넘었어~ 조금 아껴 쓰자{when}", 8)
             break
