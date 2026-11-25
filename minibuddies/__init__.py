@@ -1,0 +1,1 @@
+"""MiniBuddies application package."""

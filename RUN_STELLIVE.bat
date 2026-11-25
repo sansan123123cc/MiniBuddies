@@ -36,7 +36,7 @@ echo [2/3] Installing PyQt5...
 "%PY%" -m pip install --user pyqt5
 
 :test_qt
-"%PY%" -c "exec(open('buddies.py',encoding='utf-8').read().split('from PyQt5.QtCore')[0]);from PyQt5.QtWidgets import QApplication;QApplication([])" >nul 2>nul
+"%PY%" -c "from minibuddies import runtime;from PyQt5.QtWidgets import QApplication;QApplication([])" >nul 2>nul
 if not errorlevel 1 goto run
 echo [3/3] Reinstalling Qt...
 "%PY%" -m pip uninstall -y pyqt5 pyqt5-qt5 pyqt5-sip >nul 2>nul
