@@ -7,7 +7,7 @@ from pathlib import Path
 from PyQt5.QtGui import QImage, QImageReader
 
 from minibuddies.plugins.scenes import (
-    PACK_ID, action_name, probability, read_effect_designs, read_interaction, read_steps, speech_text,
+    PACK_ID, action_name, probability, read_effect_designs, read_interaction, read_interval, read_steps, speech_text,
 )
 
 CELL = 256
@@ -29,6 +29,7 @@ class Action:
     idle_chance: float
     characters: frozenset
     events: tuple
+    interval_seconds: int = 0
 
 
 @dataclass(frozen=True)
@@ -154,8 +155,8 @@ def read_pack(folder, sprite_offset):
         # Keep the final pose on screen until the last effect has finished.
         last = beats[-1]
         sequence[-1] = (frame, duration - last.at)
-        events = tuple(beat for beat in beats if beat.speech or beat.effect is not None)
-        actions.append(Action(name, tuple(sequence), speech, chance, allowed, events))
+        events = tuple(beat for beat in beats if beat.speech or beat.effect or beat.move or beat.turn or beat.dismiss_speech)
+        actions.append(Action(name, tuple(sequence), speech, chance, allowed, events, read_interval(definition, chance)))
     allowed = frozenset(characters)
     interactions = tuple(read_interaction(item, allowed, names, sprite_id, designs) for item in interactions)
     participants = frozenset().union(*(interaction.characters for interaction in interactions))

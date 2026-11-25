@@ -4,11 +4,16 @@ from dataclasses import dataclass
 import re
 
 from minibuddies.effects import EFFECT_PRESETS, LIGHT_EFFECTS, EffectDesign, EffectLayer, Keyframe
+from minibuddies.plugins.motion import (
+    DISTANCE_LIMIT, EASINGS, FOLLOW_SPEED_LIMIT, HEIGHT_LIMIT, TURN_DIRECTIONS, Follow, Travel, Turn,
+)
 
 
 PACK_ID = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}")
 RGB = re.compile(r"#[0-9a-fA-F]{6}")
 SPEECH_TICKS = 120
+MIN_INTERVAL_SECONDS = 5
+MAX_INTERVAL_SECONDS = 3600
 
 
 @dataclass(frozen=True)
@@ -27,6 +32,10 @@ class Beat:
     frame: int | None
     speech: str
     effect: Effect | None
+    move: Travel | None = None
+    turn: Turn | None = None
+    dismiss_speech: bool = False
+    follow: Follow | None = None
 
 
 @dataclass(frozen=True)
@@ -45,6 +54,7 @@ class Interaction:
     meet_chance: float
     meet_distance: int
     cooldown_seconds: int
+    interval_seconds: int = 0
 
 
 def integer(value, minimum, maximum, field):
@@ -57,6 +67,14 @@ def probability(value, field):
     if type(value) not in (int, float) or not 0 <= value <= 1:
         raise ValueError(f"{field}는 0부터 1까지의 수여야 해요")
     return value
+
+
+def read_interval(data, chance):
+    if "interval_seconds" not in data:
+        return 0
+    if chance:
+        raise ValueError("발동 시점은 확률과 일정 간격 중 하나를 선택하세요")
+    return integer(data["interval_seconds"], MIN_INTERVAL_SECONDS, MAX_INTERVAL_SECONDS, "발동 간격 (초)")
 
 
 def speech_text(value):
@@ -162,6 +180,41 @@ def read_effect(data, character, characters, designs):
     return Effect(name, colors, target, integer(data.get("ticks", 78), 1, 180, "effect.ticks"), designs.get(name))
 
 
+def read_move(data, ticks):
+    if not isinstance(data, dict):
+        raise ValueError("move는 JSON 객체여야 해요")
+    distance = integer(data.get("distance", 0), -DISTANCE_LIMIT, DISTANCE_LIMIT, "이동 거리 (%)")
+    height = integer(data.get("height", 0), 0, HEIGHT_LIMIT, "점프 높이 (%)")
+    easing = data.get("easing", "linear")
+    if not distance and not height:
+        raise ValueError("이동 거리나 점프 높이를 지정하세요")
+    if height and ticks < 2:
+        raise ValueError("점프하는 단계는 2틱 이상이어야 해요")
+    if easing not in EASINGS:
+        raise ValueError("지원하는 이동 속도 변화를 선택하세요")
+    return Travel(distance, height, easing)
+
+
+def read_turn(data, character, characters):
+    if not isinstance(data, dict) or data.get("direction") not in TURN_DIRECTIONS:
+        raise ValueError("지원하는 방향 전환을 선택하세요")
+    direction, target = data["direction"], data.get("target")
+    if direction == "target":
+        if characters is None or not isinstance(target, str) or target not in characters or target == character:
+            raise ValueError("함께할 캐릭터 중 바라볼 캐릭터를 고르세요")
+    elif target is not None:
+        raise ValueError("대상은 다른 캐릭터를 바라볼 때만 지정하세요")
+    return Turn(direction, target)
+
+
+def read_follow(data, character, characters):
+    target = data.get("target") if isinstance(data, dict) else None
+    if characters is None or not isinstance(target, str) or target not in characters or target == character:
+        raise ValueError("함께할 캐릭터 중 따라갈 캐릭터를 고르세요")
+    return Follow(target, integer(data.get("distance", 70), 0, DISTANCE_LIMIT, "따라갈 거리 (%)"),
+                  integer(data.get("speed", 3), 1, FOLLOW_SPEED_LIMIT, "따라가기 속도 (%)"))
+
+
 def read_steps(steps, sprite_id, *, character=None, characters=None, designs=None):
     if not isinstance(steps, list) or not 1 <= len(steps) <= 64:
         raise ValueError("액션 단계를 1~64개 정의하세요")
@@ -179,8 +232,16 @@ def read_steps(steps, sprite_id, *, character=None, characters=None, designs=Non
         elif "file" in step:
             frame = sprite_id(step["file"])
         speech = speech_text(step.get("say", ""))
+        dismiss = step.get("dismiss_speech", False)
+        if type(dismiss) is not bool or (speech and dismiss):
+            raise ValueError("한 단계에서는 말풍선을 띄우거나 닫는 것 중 하나를 선택하세요")
         effect = read_effect(step["effect"], character, characters, designs or {}) if "effect" in step else None
-        beats.append(Beat(at, ticks, frame, speech, effect))
+        move = read_move(step["move"], ticks) if "move" in step else None
+        turn = read_turn(step["turn"], character, characters) if "turn" in step else None
+        follow = read_follow(step["follow"], character, characters) if "follow" in step else None
+        if move and follow:
+            raise ValueError("이동 방식은 한 단계에 하나만 고르세요")
+        beats.append(Beat(at, ticks, frame, speech, effect, move, turn, dismiss, follow))
         end = max(end, at + ticks, at + effect.ticks if effect else 0)
         at += ticks
     return tuple(beats), end
@@ -212,7 +273,8 @@ def read_interaction(data, allowed, names, sprite_id, designs=None):
     duration = max(end for _, end in parsed)
     if duration > 1800 or sum(beat.effect is not None for role, _ in parsed for beat in role.beats) > 24:
         raise ValueError("한 상호작용은 1800틱과 효과 24개 이하여야 해요")
-    return Interaction(label, tuple(role for role, _ in parsed), frozenset(characters), duration,
-                       probability(data.get("meet_chance", 0), "meet_chance"),
+    chance = probability(data.get("meet_chance", 0), "meet_chance")
+    return Interaction(label, tuple(role for role, _ in parsed), frozenset(characters), duration, chance,
                        integer(data.get("meet_distance", 340), 64, 1200, "meet_distance"),
-                       integer(data.get("cooldown_seconds", 40), 5, 600, "cooldown_seconds"))
+                       integer(data.get("cooldown_seconds", 40), 5, 600, "cooldown_seconds"),
+                       read_interval(data, chance))

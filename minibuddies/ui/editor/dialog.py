@@ -201,8 +201,9 @@ class PackEditor(QDialog):
                     if role["character"] == old:
                         role["character"] = new_id
                     for step in role["steps"]:
-                        if step.get("effect", {}).get("target") == old:
-                            step["effect"]["target"] = new_id
+                        for action in ("effect", "turn", "follow"):
+                            if step.get(action, {}).get("target") == old:
+                                step[action]["target"] = new_id
         project.id = new_id
         project.name = self.name.text().strip()
         project.author = self.author.text().strip()

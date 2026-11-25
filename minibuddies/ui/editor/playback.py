@@ -6,6 +6,7 @@ from PyQt5.QtWidgets import QDialog, QHBoxLayout, QLabel, QPushButton, QSlider, 
 
 from minibuddies.catalog import TICK
 from minibuddies.effects import paint_effect
+from minibuddies.plugins.motion import INTERACTION_GAP, MotionActor, compile_motion
 from minibuddies.plugins.packs import sprite_bounds
 from minibuddies.plugins.scenes import SPEECH_TICKS, read_effect_designs, read_steps
 from minibuddies.ui.editor.widgets import image_pixmap
@@ -36,8 +37,11 @@ class PreviewTrack:
 
     def speech(self, tick):
         for beat in reversed(self.beats):
-            if beat.at <= tick and beat.speech:
-                return beat.speech if tick - beat.at < SPEECH_TICKS else ""
+            if beat.at <= tick:
+                if beat.dismiss_speech:
+                    return ""
+                if beat.speech:
+                    return beat.speech if tick - beat.at < SPEECH_TICKS else ""
         return self.opening_speech if tick < SPEECH_TICKS else ""
 
     def effects(self, tick):
@@ -51,6 +55,17 @@ class PreviewStage(QWidget):
         self.tracks = tracks
         self.duration = max(track.duration for track in tracks.values())
         self.tick = 0
+        midpoint = (len(tracks) - 1) / 2
+        actors = {key: MotionActor((i - midpoint) * INTERACTION_GAP * 100,
+                                   1 if len(tracks) == 1 or i < midpoint else -1, 100)
+                  for i, key in enumerate(tracks)}
+        self.motion = compile_motion(actors, {key: track.beats for key, track in tracks.items()})
+        extents = [track.extents() for track in self.motion.values()]
+        left = min(extent[0] for extent in extents)
+        right = max(extent[1] for extent in extents)
+        self.stage_center = (left + right) / 2
+        self.stage_width = right - left + 300
+        self.jump_clearance = max(extent[2] for extent in extents)
         self.setMinimumHeight(328)
 
     def seek(self, tick):
@@ -67,15 +82,16 @@ class PreviewStage(QWidget):
         p.drawLine(0, floor, self.width(), floor)
         center = self.width() / 2
         count = len(self.tracks)
-        size = min(128, self.width() / (count * 1.45 + 1.6))
-        gap = size * 1.45
+        size = min(128, self.width() * 100 / self.stage_width, (floor - 24) * 100 / (100 + self.jump_clearance))
+        gap = size * INTERACTION_GAP
         bubble_width = min(216, gap - 8) if count > 1 else min(240, self.width() - 28)
         positions = {}
-        for i, (key, track) in enumerate(self.tracks.items()):
-            x = center + (i - (count - 1) / 2) * gap
-            face = 1 if count == 1 or x < center else -1
+        for key, track in self.tracks.items():
+            pose = self.motion[key].pose(self.tick)
+            x = center + (pose.x - self.stage_center) * size / 100
+            face = pose.face
             image, bounds = track.pose(self.tick)
-            y = floor - size * bounds["bottom"]
+            y = floor - size * (bounds["bottom"] + pose.lift / 100)
             positions[key] = (x, y, face, y + size * bounds["top"])
             if not image.isNull():
                 p.save()

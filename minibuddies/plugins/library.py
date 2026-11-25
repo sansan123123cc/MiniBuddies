@@ -1,6 +1,7 @@
 """Manage plugin bindings and replay actions on opted-in pets."""
 
 import random
+import time
 from pathlib import Path
 
 from minibuddies.plugins.actions import ActionPlayback
@@ -15,6 +16,7 @@ class PluginLibrary:
         self.packs = []
         self.sprites = {}
         self.interactions = InteractionLibrary(self)
+        self.next_repeat = {}
         self.report_error = report_error
         roots = (self.root,) if installed_root is None else (self.root, Path(installed_root))
         for directory in roots:
@@ -99,6 +101,8 @@ class PluginLibrary:
             return False
 
         def finish():
+            if pet.plugin_action is not None and pet.plugin_action.motion is not None:
+                pet.plugin_action.advance(pet.seq_total)
             pet.stand_on(pet.surface)
             pet.set("idle", 60)
 
@@ -118,3 +122,27 @@ class PluginLibrary:
                 if action.idle_chance and random.random() < action.idle_chance and self.play(pet, pack, action):
                     return True
         return False
+
+    def periodic_rules(self, app):
+        for pet in app.buddies:
+            for pack in self.enabled(pet):
+                for action in self.actions_for(pack, pet.char):
+                    if action.interval_seconds:
+                        yield pack, action, pet
+        if app.cfg.get("auto_group", True):
+            for pack, interaction in self.interactions.enabled(app):
+                if interaction.interval_seconds:
+                    yield pack, interaction, None
+
+    def tick_periodic(self, app):
+        now = time.monotonic()
+        next_repeat = {}
+        for pack, rule, pet in self.periodic_rules(app):
+            key = (pack.id, rule.label, pet)
+            deadline = self.next_repeat.get(key, now + rule.interval_seconds)
+            if deadline <= now:
+                started = self.play(pet, pack, rule) if pet is not None else self.interactions.play(app, pack, rule)
+                if started:
+                    deadline = now + rule.interval_seconds
+            next_repeat[key] = deadline
+        self.next_repeat = next_repeat
