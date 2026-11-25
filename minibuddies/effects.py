@@ -225,16 +225,21 @@ class PetEffectOverlay(QWidget):
 
 
 class PluginEffectOverlay(PetEffectOverlay):
-    def __init__(self, pets, on_top):
+    def __init__(self, pets, on_top, *, track_positions=False):
         self.tick = 0
         self.bursts = []
         self.expanded = False
         super().__init__(pets, on_top)
+        if track_positions:
+            self.expand_to_screen()
+
+    def expand_to_screen(self):
+        self.setGeometry(self.mem[0].scr())
+        self.expanded = True
 
     def show_effect(self, source, target, effect, start):
         if effect.design is not None and not self.expanded:
-            self.setGeometry(self.mem[0].scr())
-            self.expanded = True
+            self.expand_to_screen()
         self.bursts.append((source, target, effect, start))
 
     def advance(self, tick):

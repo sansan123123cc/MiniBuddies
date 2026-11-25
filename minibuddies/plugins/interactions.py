@@ -6,6 +6,8 @@ import time
 
 from minibuddies.effects import PluginEffectOverlay
 from minibuddies.group_hooks import GroupHooks, close_effect, ground_group_interrupted, restore_ground_pet
+from minibuddies.plugins.actions import close_action_bubble
+from minibuddies.plugins.motion import INTERACTION_GAP, apply_motion, compile_motion, grounded_actor
 from minibuddies.plugins.scenes import SPEECH_TICKS
 
 
@@ -15,21 +17,37 @@ def start_timeline(app, group, members):
         pet.face = 1 if pet.cx < group["cx"] else -1
         pet.vx = 0
         pet.gframe = [0]
+    if group["has_motion"]:
+        actors = {key: grounded_actor(pet) for key, pet in group["cast"].items()}
+        sequences = {role.character: role.beats for role in group["interaction"].roles}
+        group["motion"] = {group["cast"][key]: track for key, track in compile_motion(actors, sequences).items()
+                           if track.segments}
     if group["has_effects"]:
-        group["effect"] = PluginEffectOverlay(members, app.on_top)
+        group["effect"] = PluginEffectOverlay(members, app.on_top, track_positions=any(
+            track.displaces() for track in group.get("motion", {}).values()))
     advance_timeline(app, group, members, 0)
 
 
 def advance_timeline(app, group, members, elapsed):
+    motion = group.get("motion", {})
     if elapsed >= group["interaction"].duration:
+        for pet, track in motion.items():
+            apply_motion(pet, track, elapsed)
         app.group_break()
         return
     overlay = group.get("effect")
-    for pet, beat in group["timeline"].get(elapsed, ()):
+    beats = group["timeline"].get(elapsed, ())
+    for pet, beat in beats:
         if beat.frame is not None:
             pet.gframe = [beat.frame]
-            pet.fy = group["floor"][1] - pet.S * pet.fbottom(beat.frame)
-        if beat.speech:
+            if pet not in motion:
+                pet.fy = group["floor"][1] - pet.S * pet.fbottom(beat.frame)
+    for pet, track in motion.items():
+        apply_motion(pet, track, elapsed)
+    for pet, beat in beats:
+        if beat.dismiss_speech:
+            close_action_bubble(pet, group["speech"].pop(pet, None))
+        elif beat.speech:
             previous = pet.bubble
             pet.say(beat.speech, min(SPEECH_TICKS, group["interaction"].duration - elapsed))
             if pet.bubble is not previous and pet.bubble is not None:
@@ -49,9 +67,7 @@ def should_break(app, group, members):
 def close_timeline(group):
     close_effect(group)
     for pet, bubble in group.get("speech", {}).items():
-        if pet.bubble is bubble:
-            bubble.close()
-            pet.bubble = None
+        close_action_bubble(pet, bubble)
 
 
 HOOKS = GroupHooks(start_timeline, advance_timeline, should_break, close_timeline, restore_ground_pet)
@@ -96,7 +112,7 @@ class InteractionLibrary:
             size = max(pet.S for pet in members)
             left = max(screen.left(), floor[0]) + size / 2
             right = min(screen.right(), floor[2]) - size / 2
-            gap = min(size * 1.6, (right - left) / (len(members) - 1))
+            gap = min(size * INTERACTION_GAP, (right - left) / (len(members) - 1))
             if gap < size * 0.7:
                 continue
             extent = gap * (len(members) - 1) / 2
@@ -113,17 +129,20 @@ class InteractionLibrary:
         members, cast, floor, center, gap = formation
         timeline = defaultdict(list)
         has_effects = False
+        has_motion = False
         for role in interaction.roles:
             for beat in role.beats:
                 timeline[beat.at].append((cast[role.character], beat))
                 has_effects = has_effects or beat.effect is not None
+                has_motion = has_motion or beat.move is not None or beat.turn is not None or beat.follow is not None
         for i, pet in enumerate(members):
             pet.vx = 0
             pet.gx = center + gap * (i - (len(members) - 1) / 2)
             pet.set("gather", 99999)
         app.group = {"kind": "plugin_interaction", "hooks": HOOKS, "mem": members, "cx": center,
                      "phase": "gather", "t": 0, "t0": 0, "floor": floor, "pack_id": pack.id,
-                     "interaction": interaction, "cast": cast, "timeline": timeline, "has_effects": has_effects}
+                     "interaction": interaction, "cast": cast, "timeline": timeline, "has_effects": has_effects,
+                     "has_motion": has_motion}
         self.next_meet[pack.id, interaction.label] = time.monotonic() + interaction.cooldown_seconds
         return True
 

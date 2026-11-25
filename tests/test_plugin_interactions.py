@@ -10,9 +10,16 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor, QImage, QPainter
-from PyQt5.QtWidgets import QMenu
+from PyQt5.QtWidgets import QDialog, QMenu
 
 from minibuddies import app as application
+from minibuddies.authoring.archive import export_archive, load_archive
+from minibuddies.authoring.installed import install_into
+from minibuddies.plugins.packs import read_pack
+from minibuddies.ui.editor.dialog import PackEditor
+from minibuddies.ui.editor.playback import PlaybackDialog
+from minibuddies.ui.editor.rules import RuleDialog
+from minibuddies.ui.editor.steps import StepDialog
 
 
 def sprite(path, height=180):
@@ -159,3 +166,111 @@ class InteractionIntegrationTest(unittest.TestCase):
         self.marisa.drag = None
         self.assertIsNone(self.app.group)
         self.assertFalse(overlay.isVisible())
+
+    def test_participant_turn_uses_the_other_pets_position_when_the_step_begins(self):
+        directory = self.root / "plugins" / "test-duet"
+        manifest = directory / "plugin.json"
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        reimu, marisa = (role["steps"] for role in data["interactions"][0]["roles"])
+        reimu[0]["move"] = {"distance": 250, "height": 40}
+        reimu[1]["dismiss_speech"] = True
+        marisa[1]["turn"] = {"direction": "target", "target": "reimu"}
+        manifest.write_text(json.dumps(data), encoding="utf-8")
+        pack, _ = read_pack(directory, 0)
+        self.app.plugins.packs[0] = pack
+        self.app.cfg["auto_group"] = False
+        for pet in (self.reimu, self.marisa):
+            self.assertTrue(self.app.plugins.bind(self.app, pet.char, pack.id, True))
+        self.assertTrue(self.library.play(self.app, pack, pack.interactions[0], self.reimu))
+        self.reach_start()
+        start = self.reimu.cx
+        self.assertLess(start, self.marisa.cx)
+        self.assertEqual(self.marisa.face, -1)
+
+        for _ in range(6):
+            self.app.tick()
+        self.assertGreater(self.reimu.cx, start)
+        self.assertAlmostEqual(self.reimu.feet(self.reimu.frame()), self.reimu.surface[1] - self.reimu.S * 0.40)
+        for _ in range(6):
+            self.app.tick()
+        destination = self.reimu.cx
+        self.assertGreater(destination, self.marisa.cx)
+        self.assertEqual(self.marisa.face, 1)
+        self.assertIsNone(self.reimu.bubble)
+        self.assertAlmostEqual(self.reimu.feet(), self.reimu.surface[1])
+
+        for _ in range(16):
+            self.app.tick()
+        self.assertIsNone(self.app.group)
+        self.assertEqual(self.reimu.state, "idle")
+        self.assertAlmostEqual(self.reimu.cx, destination)
+
+    def test_periodic_interaction_follows_a_moving_character(self):
+        editor = PackEditor(self.app)
+        self.addCleanup(editor.deleteLater)
+        targets = ["reimu", "marisa"]
+        step = StepDialog(editor, editor, {"frame": 0, "ticks": 40}, True, "reimu", targets)
+        step.travel.setCurrentIndex(step.travel.findData("follow"))
+        self.assertEqual(step.follow_target.currentData(), "marisa")
+        step.follow_distance.setValue(60)
+        step.follow_speed.setValue(8)
+        step.accept()
+        self.assertEqual(step.result(), QDialog.Accepted)
+        self.assertEqual(step.result_step["follow"], {"target": "marisa", "distance": 60, "speed": 8})
+        sequences = {"reimu": [step.result_step],
+                     "marisa": [{"frame": 0, "ticks": 40, "turn": {"direction": "right"}, "move": {"distance": 100}}]}
+        rule = RuleDialog(editor, "interactions", {"name": "같이 걸어가기", "roles": [
+            {"character": key, "steps": moves} for key, moves in sequences.items()
+        ]})
+        rule.trigger.setCurrentIndex(rule.trigger.findData("interval"))
+        rule.interval.setValue(5)
+        rule.accept()
+        self.assertEqual(rule.rule["interval_seconds"], 5)
+        self.assertEqual(rule.rule["meet_chance"], 0)
+        editor.id.setText("test-follow")
+        editor.name.setText("따라가기")
+        editor.project.rules["interactions"] = [rule.rule]
+        editor.sync_metadata()
+        archive = self.root / "follow.mbpack"
+        export_archive(editor.project, archive)
+        restored = load_archive(archive)
+        self.assertEqual(restored.rules["interactions"][0], rule.rule)
+        install_into(self.app, restored)
+
+        preview = PlaybackDialog(editor, editor, sequences, group=True)
+        preview.pause()
+        self.addCleanup(preview.close)
+        tracks = preview.stage.motion
+        preview.progress.setValue(40)
+        self.assertAlmostEqual(tracks["marisa"].pose(40).x - tracks["reimu"].pose(40).x, 60)
+        preview.progress.setValue(8)
+        self.assertLess(tracks["reimu"].pose(8).x, tracks["reimu"].pose(40).x)
+
+        for pet in (self.reimu, self.marisa):
+            self.assertTrue(self.app.plugins.bind(self.app, pet.char, "test-follow", True))
+        with patch("minibuddies.plugins.library.time.monotonic", return_value=100) as clock:
+            self.app._tk = 29
+            self.app.tick()
+            self.assertIsNone(self.app.group)
+            clock.return_value = 104
+            self.app.plugins.tick_periodic(self.app)
+            self.assertIsNone(self.app.group)
+            clock.return_value = 105
+            with patch.object(self.marisa, "isVisible", return_value=False):
+                self.app.plugins.tick_periodic(self.app)
+                self.assertIsNone(self.app.group)
+            self.app.plugins.tick_periodic(self.app)
+            self.assertIsNotNone(self.app.group)
+            self.reach_start()
+            reimu_x, marisa_x = self.reimu.cx, self.marisa.cx
+            for _ in range(40):
+                self.app.tick()
+            self.assertIsNone(self.app.group)
+            self.assertGreater(self.reimu.cx, reimu_x)
+            self.assertGreater(self.marisa.cx, marisa_x)
+            self.assertAlmostEqual(self.marisa.cx - self.reimu.cx, self.reimu.S * 0.60)
+            self.app.plugins.tick_periodic(self.app)
+            self.assertIsNone(self.app.group)
+            clock.return_value = 110
+            self.app.plugins.tick_periodic(self.app)
+            self.assertIsNotNone(self.app.group)

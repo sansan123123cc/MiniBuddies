@@ -271,6 +271,8 @@ class App(
 
     def tick(self):
         self._tk = getattr(self, "_tk", 0) + 1
+        if self._tk % 30 == 0:
+            self.plugins.tick_periodic(self)
         if self._tk % 90 == 0:
             try:
                 self.sweep_strays()
