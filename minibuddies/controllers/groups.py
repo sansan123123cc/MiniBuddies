@@ -339,6 +339,7 @@ class GroupController:
 
     def duo_tick(self):
         if not self.team or not self.buddies:
+            self.plugins.interactions.try_automatic(self)
             return
         for c in self.buddies:      # 우는 친구는 다른 캐릭터가 달래 주러 와요
             if c.state == "cry" and c.surface and not getattr(c, "comforted", False):
@@ -356,7 +357,7 @@ class GroupController:
                         c.comforted = False
                     h.go_to(c, "approach", arrive, speed=2.4)
                     return
-        if touhou.try_automatic(self):
+        if self.plugins.interactions.try_automatic(self) or touhou.try_automatic(self):
             return
         if random.random() < 0.22:
             self.duo_event(random.choice(["tag", "tag", "snack", "dance", "nap", "greet"]))
@@ -596,20 +597,24 @@ class GroupController:
         g, self.group = self.group, None
         if not g:
             return
-        touhou.close_group(g)
+        hooks = g.get("hooks")
+        if hooks:
+            hooks.close(g)
         for b in g["mem"]:
             if b in self.buddies and b.state in ("group", "gather", "tower", "train"):
                 if b.state == "tower":
                     b.fall(vx=random.uniform(-2, 2))
                 else:
-                    touhou.restore_pet(g, b)
+                    if hooks:
+                        hooks.restore(g, b)
                     b.set("idle", 30)
 
     def group_step(self):
         g = self.group
         g["t"] += 1
         mem = [b for b in g["mem"] if b in self.buddies]
-        if touhou.should_break(self, g, mem):
+        hooks = g.get("hooks")
+        if hooks and hooks.should_break(self, g, mem):
             self.group_break()
             return
         if len(mem) < 2:
@@ -643,7 +648,9 @@ class GroupController:
 
     def group_start(self, g, mem):
         k = g["kind"]
-        if touhou.start_group(self, g, mem):
+        hooks = g.get("hooks")
+        if hooks:
+            hooks.start(self, g, mem)
             return
         if k.startswith("scene:"):
             _, sq, name = k.split(":", 2)
@@ -762,7 +769,9 @@ class GroupController:
 
     def group_run(self, g, mem, t):
         k = g["kind"]
-        if touhou.advance_group(self, g, mem, t):
+        hooks = g.get("hooks")
+        if hooks:
+            hooks.advance(self, g, mem, t)
             return
         if k == "tower":
             self.tower_tick(g, t)

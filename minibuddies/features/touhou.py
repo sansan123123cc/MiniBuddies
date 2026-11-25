@@ -1,11 +1,9 @@
 """Scarlet Devil Mansion guard and Touhou spell-card interactions."""
 
-import math
 import random
 import time
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QPainter
-from PyQt5.QtWidgets import QWidget
+from minibuddies.effects import PetEffectOverlay, draw_light, draw_particles
+from minibuddies.group_hooks import GroupHooks, close_effect, ground_group_interrupted, restore_ground_pet
 
 
 TOUHOU_MANSION = ("meiling", "koakuma", "patchouli", "sakuya", "remilia", "flandre")
@@ -25,116 +23,25 @@ TOUHOU_SPELLS = {
     "remilia": ("홍부 「스칼렛 슛」", "scarlet", ("#e93d65", "#ff7990", "#ffc2cd")),
     "flandre": ("금기 「레바테인」", "slash", ("#ef3961", "#ffbf64")),
 }
-TOUHOU_PARTICLES = {
-    "seal": (7, 1.7, 3.0, "orb"), "fairy": (8, 1.2, 2.8, "orb"),
-    "freeze": (11, 2.4, 4.1, "diamond"), "petal": (11, 4.2, 3.1, "petal"),
-    "books": (7, 2.0, 2.7, "diamond"), "sun": (15, math.tau, 3.0, "orb"),
-    "clock": (11, 1.8, 4.4, "diamond"), "scarlet": (9, 1.45, 3.8, "orb"),
-}
 
-class TouhouDanmaku(QWidget):
-    """두 펫 사이에서만 그리는 클릭 통과 탄막. 게임 판정과는 연결하지 않는다."""
+class TouhouDanmaku(PetEffectOverlay):
+    """Draw the original spell-card effects for the two participating pets."""
+
+    draw_light = staticmethod(draw_light)
+    draw_particles = staticmethod(draw_particles)
+
     def __init__(self, mem, on_top):
-        super().__init__()
-        flags = Qt.FramelessWindowHint | Qt.Tool | Qt.WindowTransparentForInput | Qt.WindowDoesNotAcceptFocus
-        self.setWindowFlags(flags | (Qt.WindowStaysOnTopHint if on_top else Qt.WindowFlags()))
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setAttribute(Qt.WA_ShowWithoutActivating)
-        self.setAttribute(Qt.WA_DeleteOnClose)
-        self.mem = mem
         self.t = 0
-        extent = max(b.S for b in mem)
-        screen = mem[0].scr()
-        left = max(screen.left(), int(min(b.cx for b in mem) - extent * 2.4))
-        right = min(screen.right() + 1, int(max(b.cx for b in mem) + extent * 2.4))
-        top = max(screen.top(), int(min(b.fy for b in mem) - extent * 1.8))
-        bottom = min(screen.bottom() + 1, int(max(b.fy for b in mem) + extent * 1.8))
-        self.setGeometry(left, top, max(1, right - left), max(1, bottom - top))
-        self.show()
+        super().__init__(mem, on_top)
 
-    def paintEvent(self, e):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
-        for index, b in enumerate(self.mem):
+    def paintEvent(self, event):
+        painter = self.painter()
+        for index, pet in enumerate(self.mem):
             age = self.t - TOUHOU_CAST_TIMES[index]
-            if not 0 <= age < 78:
-                continue
-            _, effect, palette = TOUHOU_SPELLS[b.char]
-            opacity = min(1, (age + 1) / 7, (78 - age) / 19)
-            p.save()
-            p.translate(b.cx - self.x() + b.face * b.S * 0.2, b.fy + b.S * 0.57 - self.y())
-            p.scale(b.face * b.S / 100, b.S / 100)
-            p.setOpacity(opacity)
-            if effect in ("spark", "moon", "slash"):
-                reach = max(28, abs(self.mem[1 - index].cx - b.cx) * 100 / b.S - 55)
-                self.draw_light(p, effect, palette, age, reach)
-            else:
-                self.draw_particles(p, effect, palette, age)
-            p.restore()
-
-    @staticmethod
-    def draw_light(p, effect, palette, age, reach=180):
-        from PyQt5.QtCore import QPointF
-        from PyQt5.QtGui import QColor, QPainterPath, QPen
-        length = min(180, reach) * min(1, (age + 1) / 15)
-        if effect == "slash":
-            p.rotate(-52 + 90 * min(1, age / 40))
-            path = QPainterPath(QPointF(0, 6))
-            path.quadTo(QPointF(length * 0.3, -length * 0.68), QPointF(length * 0.8, -length * 0.34))
-            for color, width in zip(palette, (13, 5)):
-                p.setPen(QPen(QColor(color), width, Qt.SolidLine, Qt.RoundCap))
-                p.drawPath(path)
-            return
-        for side in (-1, 1) if effect == "moon" else (0,):
-            p.save()
-            p.rotate(side * (9 + min(age, 36) * 0.28))
-            widths = (5.5, 2) if effect == "moon" else (22, 12, 4)
-            for color, width in zip(palette, widths):
-                p.setPen(QPen(QColor(color), width, Qt.SolidLine, Qt.RoundCap))
-                p.drawLine(QPointF(2, 0), QPointF(length, 0))
-            p.restore()
-
-    @staticmethod
-    def draw_particles(p, effect, palette, age):
-        from PyQt5.QtCore import QPointF
-        from PyQt5.QtGui import QColor, QPolygonF
-        count, spread, speed, shape = TOUHOU_PARTICLES[effect]
-        p.setPen(Qt.NoPen)
-        for wave, delay in enumerate((0, 17, 34)):
-            elapsed = age - delay
-            if not 0 <= elapsed < 45:
-                continue
-            travel = elapsed
-            if effect in ("freeze", "clock"):
-                travel -= min(14, max(0, elapsed - 12))
-            for i in range(count):
-                ratio = i / (count - 1)
-                angle = (ratio - 0.5) * spread + (wave % 2 - 0.5) * 0.13
-                if effect == "freeze":
-                    angle += (ratio - 0.5) * min(0.5, max(0, elapsed - 26) * 0.035)
-                elif effect in ("petal", "sun"):
-                    angle += wave * 0.24 + elapsed * 0.015
-                distance = 8 + travel * speed
-                x = distance * math.cos(angle)
-                y = distance * math.sin(angle) + math.sin(travel / 8 + i) * 6
-                if effect == "seal":
-                    orbit = i * math.tau / count + elapsed * 0.16
-                    x = 12 + travel * speed + math.cos(orbit) * 13
-                    y = math.sin(orbit) * (8 + travel * 0.42)
-                color = QColor(palette[(i + wave) % len(palette)])
-                if effect == "freeze" and elapsed >= 12:
-                    color = QColor("#c8f2ff")
-                color.setAlphaF(min(1, (45 - elapsed) / 12))
-                p.setBrush(color)
-                width = 5 if effect in ("seal", "scarlet") else 3.5
-                if shape == "diamond":
-                    dx, dy = math.cos(angle), math.sin(angle)
-                    p.drawPolygon(QPolygonF([QPointF(x + dx * width * 2, y + dy * width * 2),
-                                             QPointF(x + dy * 2.4, y - dx * 2.4),
-                                             QPointF(x - dx * width * 2, y - dy * width * 2),
-                                             QPointF(x - dy * 2.4, y + dx * 2.4)]))
-                else:
-                    p.drawEllipse(QPointF(x, y), width, width * (0.62 if shape == "petal" else 1))
+            if 0 <= age < 78:
+                _, preset, palette = TOUHOU_SPELLS[pet.char]
+                self.paint_spell(painter, pet, self.mem[1 - index], preset, palette, age, pet.face)
+        painter.end()
 
 def touhou_members(self, kind, who=None):
     """같은 모니터·바닥에서 가까이 만난, 전용 그림이 있는 펫만 고른다."""
@@ -193,7 +100,7 @@ def touhou_play(self, kind, who=None):
         b.goal = None; b.vx = 0
         b.gx = cx + (i - 0.5) * gap
         b.set("gather", 99999)
-    self.group = {"kind": kind, "mem": mem, "cx": cx, "phase": "gather", "t": 0, "t0": 0,
+    self.group = {"kind": kind, "hooks": HOOKS, "mem": mem, "cx": cx, "phase": "gather", "t": 0, "t0": 0,
                   "floor": floor}
     self.touhou_until = time.monotonic() + 40
     return True
@@ -226,24 +133,9 @@ def try_automatic(app):
     return chance < 0.14 and app.touhou_play("touhou_duel")
 
 
-def should_break(app, group, members):
-    if group["kind"] not in ("touhou_duel", "touhou_guard"):
-        return False
-    return app.quiet() or app.scene or len(members) != len(group["mem"]) or any(
-        pet.drag is not None or not pet.isVisible() or pet.surface != group["floor"]
-        or pet.state not in ("gather", "group", "tower") or not pet.surface_alive() for pet in members
-    )
-
-
-def close_group(group):
-    if group["kind"] == "touhou_duel" and "effect" in group:
-        group["effect"].close()
-
-
 def restore_pet(group, pet):
-    if group["kind"] == "touhou_duel" and pet.surface and pet.drag is None:
-        pet.stand_on(pet.surface)
-        pet.vx = 0
+    if group["kind"] == "touhou_duel":
+        restore_ground_pet(group, pet)
 
 
 def start_group(app, group, members):
@@ -258,26 +150,23 @@ def start_group(app, group, members):
             pet.fy = y - pet.S * pet.fbottom(TOUHOU_GUARD_FRAME)
             y = pet.fy + pet.S * (pet.ftop(TOUHOU_GUARD_FRAME) + 0.11)
             pet.raise_()
-        return True
-    if group["kind"] == "touhou_duel":
-        for i, pet in enumerate(members):
-            pet.face = 1 if i == 0 else -1
-            pet.vx = 0
-            pet.gframe = [0]
-        group["effect"] = TouhouDanmaku(members, app.on_top)
-        app.touhou_duel_tick(group, members, 0)
-        return True
-    return False
+        return
+    for i, pet in enumerate(members):
+        pet.face = 1 if i == 0 else -1
+        pet.vx = 0
+        pet.gframe = [0]
+    group["effect"] = TouhouDanmaku(members, app.on_top)
+    app.touhou_duel_tick(group, members, 0)
 
 
 def advance_group(app, group, members, ticks):
     if group["kind"] == "touhou_duel":
         app.touhou_duel_tick(group, members, ticks)
-        return True
-    if group["kind"] == "touhou_guard":
+    else:
         app.tower_tick(group, ticks, recenter=True)
-        return True
-    return False
+
+
+HOOKS = GroupHooks(start_group, advance_group, ground_group_interrupted, close_effect, restore_pet)
 
 
 def add_group_menu(app, menu, pet):

@@ -16,6 +16,19 @@ from minibuddies.ui.dialogs import SettingsDialog
 
 
 class AppMenus:
+    def plugin_interaction_menu(self, menu, pet):
+        library = self.plugins.interactions
+        choices = list(library.enabled(self, pet))
+        if not choices:
+            return
+        submenu = menu.addMenu("플러그인 상호작용")
+        submenu.setToolTipsVisible(True)
+        for pack, interaction in choices:
+            item = submenu.addAction(f"{pack.label} · {interaction.label}")
+            item.setEnabled(library.formation(self, interaction, pet) is not None)
+            item.setToolTip("참여 펫을 같은 모니터, 같은 바닥에 가까이 두세요.")
+            item.triggered.connect(lambda _checked, p=pack, i=interaction: library.play(self, p, i, pet))
+
     def plugin_menu(self, menu, pet):
         from PyQt5.QtCore import QUrl
         from PyQt5.QtGui import QDesktopServices
@@ -121,6 +134,7 @@ class AppMenus:
                     sm2.addAction(lab, lambda k=k, sq=sq: self.group_event("scene:%s:%s" % (sq, k), force=True))
         # 3) 같이 놀기: 단체 놀이 + 둘이 놀기 + 다 같이
         pl = m.addMenu("같이 놀기")
+        self.plugin_interaction_menu(pl, who)
         touhou.add_group_menu(self, pl, who)
         if self.team and len(self.team) >= 3:
             for lab, k in [("기차놀이", "train"), ("인간 탑 쌓기", "tower"), ("단체사진 찰칵", "photo"),

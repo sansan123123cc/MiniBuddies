@@ -1,8 +1,11 @@
 """Manage plugin bindings and replay actions on opted-in pets."""
 
 import random
-from minibuddies.plugins.packs import PACK_ID, SETTINGS_KEY, read_pack
 from pathlib import Path
+
+from minibuddies.plugins.interactions import InteractionLibrary
+from minibuddies.plugins.packs import SETTINGS_KEY, read_pack
+from minibuddies.plugins.scenes import PACK_ID
 
 
 class PluginLibrary:
@@ -10,6 +13,7 @@ class PluginLibrary:
         self.root = Path(root)
         self.packs = []
         self.sprites = {}
+        self.interactions = InteractionLibrary(self)
         try:
             folders = sorted(self.root.iterdir()) if self.root.is_dir() else []
         except OSError as error:
@@ -29,7 +33,8 @@ class PluginLibrary:
             self.sprites.update(sprites)
 
     def available(self, char):
-        return (pack for pack in self.packs if not pack.characters or char in pack.characters)
+        return (pack for pack in self.packs
+                if char in pack.participants or (pack.actions and (not pack.characters or char in pack.characters)))
 
     def selected(self, cfg, char):
         assignments = cfg.get(SETTINGS_KEY)

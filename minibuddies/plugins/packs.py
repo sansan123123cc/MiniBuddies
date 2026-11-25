@@ -1,15 +1,15 @@
 """Validate a local plugin manifest and its sprite data."""
 
 import json
-import re
-from PyQt5.QtGui import QImage, QImageReader
 from dataclasses import dataclass
 from pathlib import Path
 
+from PyQt5.QtGui import QImage, QImageReader
+
+from minibuddies.plugins.scenes import PACK_ID, action_name, integer, probability, read_interaction, speech_text
 
 CELL = 256
 SETTINGS_KEY = "character_plugins"
-PACK_ID = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}")
 ALPHA_MASK = bytes(int(alpha >= 32) for alpha in range(256))
 
 
@@ -33,6 +33,8 @@ class Pack:
     label: str
     characters: frozenset
     actions: tuple
+    interactions: tuple
+    participants: frozenset
 
 
 def pack_file(folder, name):
@@ -81,42 +83,46 @@ def read_pack(folder, sprite_offset):
         raise ValueError("플러그인 이름을 1~80자로 입력하세요")
     if not isinstance(characters, list) or any(not isinstance(char, str) or not PACK_ID.fullmatch(char) for char in characters):
         raise ValueError("characters에는 캐릭터 폴더 이름을 적어 주세요")
-    definitions = data.get("actions")
-    if not isinstance(definitions, list) or not 1 <= len(definitions) <= 24:
-        raise ValueError("행동은 1~24개를 정의해 주세요")
+    definitions = data.get("actions", [])
+    interactions = data.get("interactions", [])
+    if not isinstance(definitions, list) or len(definitions) > 24:
+        raise ValueError("actions는 최대 24개까지 정의할 수 있어요")
+    if not isinstance(interactions, list) or len(interactions) > 16:
+        raise ValueError("interactions는 최대 16개까지 정의할 수 있어요")
+    if not definitions and not interactions:
+        raise ValueError("actions 또는 interactions가 하나 이상 필요해요")
 
     sprites = {}
     actions = []
     names = set()
+
+    def sprite_id(file):
+        path = pack_file(folder, file)
+        if path not in sprites:
+            if len(sprites) >= 64:
+                raise ValueError("팩마다 다른 PNG는 64장까지 넣을 수 있어요")
+            # Negative IDs keep user frames separate from numbered built-in sprites.
+            sprites[path] = (-1 - sprite_offset - len(sprites), load_sprite(path))
+        return sprites[path][0]
+
     for definition in definitions:
         if not isinstance(definition, dict):
             raise ValueError("행동은 JSON 객체로 정의해 주세요")
-        name = definition.get("name")
-        if not isinstance(name, str) or not name.strip() or len(name) > 80 or name in names:
-            raise ValueError("행동마다 고유한 이름을 1~80자로 입력하세요")
-        names.add(name)
-        speech = definition.get("say", "")
-        chance = definition.get("idle_chance", 0)
-        if not isinstance(speech, str) or len(speech) > 160:
-            raise ValueError("말풍선은 160자 이내로 입력하세요")
-        if type(chance) not in (int, float) or not 0 <= chance <= 1:
-            raise ValueError("idle_chance는 0부터 1까지의 수여야 해요")
+        name = action_name(definition.get("name"), names)
+        speech = speech_text(definition.get("say", ""))
+        chance = probability(definition.get("idle_chance", 0), "idle_chance")
         frames = definition.get("frames")
         if not isinstance(frames, list) or not 1 <= len(frames) <= 64:
             raise ValueError("행동의 프레임은 1~64개여야 해요")
         sequence = []
         for frame in frames:
             ticks = frame.get("ticks") if isinstance(frame, dict) else None
-            if type(ticks) is not int or not 1 <= ticks <= 600:
-                raise ValueError("프레임의 ticks는 1~600 사이의 정수여야 해요")
-            path = pack_file(folder, frame.get("file"))
-            if path not in sprites:
-                if len(sprites) >= 64:
-                    raise ValueError("팩마다 다른 PNG는 64장까지 넣을 수 있어요")
-                # Negative IDs keep user frames separate from numbered built-in sprites.
-                sprites[path] = (-1 - sprite_offset - len(sprites), load_sprite(path))
-            sequence.append((sprites[path][0], ticks))
+            ticks = integer(ticks, 1, 600, "ticks")
+            sequence.append((sprite_id(frame.get("file")), ticks))
         if sum(ticks for _, ticks in sequence) > 1800:
             raise ValueError("한 행동의 전체 길이는 1800틱 이하여야 해요")
         actions.append(Action(name, tuple(sequence), speech, chance))
-    return Pack(folder.name, label, frozenset(characters), tuple(actions)), dict(sprites.values())
+    allowed = frozenset(characters)
+    interactions = tuple(read_interaction(item, allowed, names, sprite_id) for item in interactions)
+    participants = frozenset().union(*(interaction.characters for interaction in interactions))
+    return Pack(folder.name, label, allowed, tuple(actions), interactions, participants), dict(sprites.values())
