@@ -68,6 +68,8 @@ try:
                             0x0001 | 0x0002 | 0x0010 | 0x0200)
         return True
 except Exception:
+    user32 = None
+
     def window_tops():
         return []
     def set_topmost(wid, on, force=False):

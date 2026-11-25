@@ -1,125 +1,25 @@
-"""Pet movement, state transitions and rendering."""
+"""Pet movement callbacks."""
 
 import datetime
 import math
-import os
 import random
 import time
-from PyQt5.QtCore import QPoint, QTimer, Qt
-from PyQt5.QtGui import QCursor, QPainter
-from PyQt5.QtWidgets import QApplication, QWidget
-from minibuddies.catalog import (
-    AVOID_STATES,
-    CRY_LINES,
-    DROP_LINES,
-    F,
-    FLEE_DEFAULT,
-    FLEE_LINES,
-    GRAVITY,
-    SHOOT_LINES,
-    SIT_HIP,
-    SUMMON,
-    TICK,
-    char_scale,
-    voice_filter,
-)
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QCursor
+from PyQt5.QtWidgets import QApplication
+from minibuddies.catalog import AVOID_STATES, F, FLEE_DEFAULT, FLEE_LINES, GRAVITY, SIT_HIP
 from minibuddies.desktop import CURSOR, screen_for
-from minibuddies.features.legacy import _rest_on
-from minibuddies.ui.widgets import Bubble, Rope
+from minibuddies.features.rest import _rest_on
 
 
 def hour():
     return datetime.datetime.now().hour
 
 
-class Buddy(QWidget):
-    def __init__(self, app, size, x=None, entrance=None, char=None):
-        super().__init__()
-        self.app = app
-        self.char = char or app.pick_char()
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setAcceptDrops(True)    # 파일 던지기: 파일을 캐릭터 위에 놓으면 요약·정리·변환
-        # 기본은 모두 같은 크기. 메뉴에서 '크기 제각각'을 켜면 살짝씩 달라짐
-        self.scale = random.uniform(0.8, 1.15) if app.cfg.get("varied", False) else 1.0
-        self.S = int(size * self.scale * char_scale(app.cfg, self.char))
-        self.setFixedSize(self.S, self.S)
-        size = self.S
-        self.rope = None
-        self.pat = 0
-        self.react_next = None       # 부딪힌 뒤 착지해서 할 리액션
-        self.grudge = None           # 나를 맞힌 친구
-        self.knock_t = 0
-        self.goal = None             # 친구에게 다가가기/쫓기/도망
-        self.bubble = None; self.bubble_t = 0
-        self.pframes, self.pspeed, self.pvx = [0], 10, 0.0
-        self.gx = None               # 단체 동작: 모일 위치
-        self.gframe = [0]            # 단체 동작: 보여줄 프레임
-        self.target_y = 0
-        self.face = random.choice([-1, 1])
-        self.angle = 0.0
-        self.anim = 0
-        self.vx = self.vy = 0.0
-        self.surface = None          # (left, top, right) 지금 서 있는 곳
-        self.edge = 0                # 매달리기/걸터앉기 중인 모서리 방향 (-1 왼쪽, 1 오른쪽)
-        self.state, self.t = "air", 0
-        self.air_kind = "fall"
-        self.fall_from = 0.0
-        self.cool = 0                # 마우스·친구 반응 쿨타임
-        self.edge_cool = 0
-        self.drag = None
-        self.after = None            # 상태 끝나고 할 일
-        scr = self.scr()
-        cx = x if x is not None else random.randint(scr.left() + size, scr.right() - size)
-        self.fx = float(cx - size / 2)
-        ent = entrance or random.choice(["drop", "drop", "peek", "umbrella", "umbrella", "rope"])
-        if app.quiet() and ent in ("drop", "umbrella", "rope"):   # 한 자리에 있기: 하늘에서 안 떨어지고 바닥에서 빼꼼
-            ent = "peek"
-        if ent == "peek":
-            self.fy = float(scr.bottom() - self.S * self.fbottom(F["peek"]))
-            self.set("peek", random.randint(90, 160))
-        elif ent == "umbrella":
-            self.fy = float(scr.top() - size)
-            self.set("umbrella")
-        elif ent == "rope":
-            self.fy = float(scr.top() - size)
-            self.rope = Rope(tuple(app.chars[self.char]["rope"].get("rgb", (154, 106, 76))))
-            self.set("rope", random.randint(0, 2))   # t = 중간에 멈칫할 횟수
-        else:
-            self.fy = float(scr.top() - size)
-            self.fall_from = self.fy
-            self.vx = random.uniform(-1, 1)
-        self.move(int(self.fx), int(self.fy))
-        self.show()
-
+class PetMovement:
     # ── 도우미 ─────────────────────────────
     def scr(self):
         return screen_for(self.char).availableGeometry()
-
-    def fbottom(self, f):
-        return self.app.frame_bounds(self.char, f).get("bottom", 0.977)
-
-    def ftop(self, f):
-        return self.app.frame_bounds(self.char, f).get("top", 0.1)
-
-    @property
-    def cx(self):
-        return self.fx + self.S / 2
-
-    def feet(self, f=0):
-        return self.fy + self.S * self.fbottom(f)
-
-    def set(self, st, t=0, after=None):
-        prev = self.state
-        self.state, self.t, self.after = st, t, after
-        if st not in ("roll",):
-            self.angle = 0
-        if st == "cry" and prev != "cry" and self.char in CRY_LINES:   # 울 때 캐릭터별 대사
-            self.say(random.choice(CRY_LINES[self.char]), 160)
-
-    def stand_on(self, surf):
-        self.surface = surf
-        self.fy = surf[1] - self.S * self.fbottom(0)
 
     def surfaces(self):
         scr = self.scr()
@@ -291,18 +191,6 @@ class Buddy(QWidget):
                 and not (self.state == "air" and self.air_kind in ("thrown", "knocked")):
             self.face = 1 if self.vx > 0 else -1
 
-    def flush(self):
-        """틱마다 한 번: 위치·그림이 실제로 바뀐 경우에만 창을 옮기고 다시 그림 (렉 줄이기)"""
-        pos = (int(self.fx), int(self.fy))
-        if pos != getattr(self, "_lpos", None):
-            self._lpos = pos
-            self.move(*pos)
-        f = F["fall"] if self.drag is not None else self.frame()
-        key = (f, self.face, int(self.angle) if self.angle else 0, self.S, self.app.chars[self.char]["dir"])
-        if key != getattr(self, "_lkey", None):
-            self._lkey = key
-            self.update()
-
     def ground_step(self, st, scr):
         self.t -= 1
         l, t, r = self.surface
@@ -443,113 +331,6 @@ class Buddy(QWidget):
         if st == "pushed" and self.t <= 0:
             self.set("pout", 60)
 
-    def say(self, text, ticks=150, force=False, sticky=False):
-        if not force and ((self.bubble and self.bubble.sticky) or getattr(self, "say_lock", 0) > 0):
-            return                                   # Claude 가 띄운 말풍선은 사용자가 닫을 때까지 그대로
-        if not force and not self.app.cfg.get("bubbles", True):
-            return
-        if not sticky:
-            text = voice_filter(f"{self.char}@{self.app.outfit.get(self.char)}", text)
-        if self.bubble:
-            self.bubble.close()
-        self.bubble = Bubble(text, sticky, on_close=self.bubble_closed if sticky else None)
-        self.bubble_t = ticks
-        self.place_bubble()
-        self.bubble.show()
-
-    def bubble_closed(self):
-        self.bubble = None; self.bubble_t = 0; self.say_lock = 0
-
-    def place_bubble(self):
-        if not self.bubble:
-            return
-        top = self.fy + self.S * self.ftop(self.frame()) - self.bubble.height() + 4
-        self.bubble.move(int(self.cx - self.bubble.width() / 2), int(top))
-
-    def tick_bubble(self):
-        if getattr(self, "say_lock", 0) > 0:
-            self.say_lock -= 1
-        if self.bubble:
-            if not self.bubble.sticky:
-                self.bubble_t -= 1
-            if self.bubble_t <= 0 and not self.bubble.sticky:
-                self.bubble.close(); self.bubble = None
-            else:
-                self.place_bubble()
-
-    def do_persona(self, idx=None):
-        """캐릭터 고유 동작 (6번 시트)"""
-        lst = self.app.chars[self.char].get("persona") or []
-        if not lst:
-            return False
-        if idx is None:
-            item = random.choices(lst, weights=[x[3] for x in lst])[0]
-        else:
-            item = lst[idx % len(lst)]
-        frames, speed, dur, _, vx, lines = item
-        self.pframes, self.pspeed = frames, speed
-        self.pvx = vx
-        self.vx = (self.face or 1) * vx
-        self.set("persona", random.randint(*dur))
-        self.say(random.choice(lines))
-        # 시부키가 "다들 모여!" 하면 단체 놀이 시작
-        if (self.char, frames[0]) in SUMMON and self.app.team:
-            QTimer.singleShot(1500, lambda: self.app.group_event(leader=self))
-        if self.char == "toa" and frames[0] in (52, 58):      # 퇴마 드립: 유령·저주인형은 도망!
-            for o in self.app.buddies:
-                if o.char in ("hiyori", "mary") and o.surface == self.surface and o.surface \
-                        and abs(o.cx - self.cx) < self.S * 4 and o.state in ("idle", "walk", "read", "milk", "cheer") \
-                        and o.goal is None:
-                    o.say("히익! 퇴마당한다!" if o.char == "hiyori" else "냐악! 저리 가 냐!", 90)
-                    o.go_to(self, "flee", ticks=110)
-        if self.char in ("hiyori", "rang") and frames[0] in ((52,) if self.char == "hiyori" else (58,)):
-            for o in self.app.buddies:                         # 뿌! / 어흥! 에 깜짝
-                if o is not self and o.surface == self.surface and o.surface \
-                        and abs(o.cx - self.cx) < self.S * 2.5 and o.state in ("idle", "walk", "read", "milk") \
-                        and o.goal is None:
-                    o.vx = 0; o.set("surprise", 50)
-        if self.char == "riko" and frames == [56]:      # 점프킹: 웅크렸다가 크게 점프
-            self.after = "bigjump"
-        return True
-
-    def has_frame(self, f):
-        try:
-            return os.path.exists(os.path.join(self.app.chars[self.char]["dir"], f"{f}.png"))
-        except Exception:
-            return False
-
-    def play_seq(self, seq, after=None):
-        """[(프레임, 틱), ...] 을 한 번 재생하고 after(함수 또는 다음 상태)"""
-        self.vx = 0
-        self.seqf = [(f, max(1, int(d))) for f, d in seq]
-        self.seq_total = sum(d for _, d in self.seqf)
-        self.set("seq", self.seq_total, after=after)
-
-    def say_later(self, ticks, text):
-        QTimer.singleShot(int(ticks * TICK), lambda: self.say(text, 110) if self in self.app.buddies else None)
-
-    def do_shoot(self):
-        """니케: 뒷모습으로 총 쏘기 (대기 → 조준 → 연사 → 장전 → 연사 → 버스트 → 뒤돌아 브이)"""
-        if not self.has_frame(F["shoot_ready"]):
-            return False
-        a, b = F["shoot_fire"]
-        fire = lambda n, sp=6: [(a, sp), (b, sp)] * n
-        seq = [(F["shoot_ready"], 30), (F["shoot_aim"], 26)] + fire(random.randint(8, 14)) \
-            + [(F["shoot_reload"], 45)] + fire(random.randint(6, 10))
-        if random.random() < 0.35:
-            seq += [(F["shoot_cover"], 50)] + fire(5)
-        t_burst = sum(d for _, d in seq)
-        seq += [(F["burst"], 70), (F["shoot_end"], 70)]
-        key = f"{self.char}@{self.app.outfit.get(self.char)}"
-        lines = SHOOT_LINES.get(key) or SHOOT_LINES.get(self.char) or ("사격 개시!", "장전!", "버스트!", "클리어!")
-        self.say(lines[0], 90)
-        reload_t = 56 + 2 * 6 * 8
-        self.say_later(reload_t, lines[1])
-        self.say_later(t_burst, lines[2])
-        self.say_later(t_burst + 70, lines[3])
-        self.play_seq(seq)
-        return True
-
     def go_to(self, who, mode="approach", arrive=None, ticks=600, speed=None):
         """친구에게 다가가기(approach) / 쫓기(chase) / 도망치기(flee)"""
         if self.app.quiet():     # 한 자리에 있기: 다가가기·쫓기·도망 안 함
@@ -588,24 +369,6 @@ class Buddy(QWidget):
                 return True
         return False
 
-    def check_pat(self):
-        """커서를 머리 위에 가만히 올려두면 쓰담쓰담"""
-        if self.state in ("sleep", "nap", "air", "dig", "balloon", "walk", "run", "roll", "crawl", "hang", "climb",
-                          "rope", "rope_pause", "wallclimb", "push") \
-                or getattr(self, "goal", None) is not None or abs(self.vx) > 0.5 or QApplication.mouseButtons():
-            self.pat = 0; return                         # 도망·쫓기·이동 중엔 쓰담 안 됨 (지나가다 커서에 닿아도 X)
-        c = QCursor.pos()
-        if self.geometry().contains(c):
-            self.pat += 1
-            if self.pat == 45:
-                self.vx = 0; self.cool = 300
-                self.set("happy", 150)
-                self.app.touch(self, "pat")
-            elif self.pat > 45 and self.state == "happy":
-                self.t = max(self.t, 30)          # 계속 쓰다듬으면 계속 행복
-        else:
-            self.pat = 0
-
     # ── 밧줄 ─────────────────────────────
     def update_rope(self):
         if self.rope:
@@ -614,17 +377,6 @@ class Buddy(QWidget):
             x = self.fx + self.S / 2 + self.face * (self.S * rx - self.S / 2)
             top_y = self.fy + self.S * self.ftop(F["rope"]) + 3
             self.rope.place(x, self.scr().top() - 5, top_y, self.S * info.get("w", 0.03))
-
-    def closeEvent(self, e):
-        """펫이 화면에서 빠질 때(환경설정에서 빼기·퇴장 등) 말풍선도 같이 정리 — 안 하면 말풍선만 허공에 남음"""
-        try:
-            if self.bubble:
-                bb, self.bubble = self.bubble, None
-                bb.close()
-            self.drop_rope()
-        except Exception:
-            pass
-        super().closeEvent(e)
 
     def drop_rope(self):
         if self.rope:
@@ -843,179 +595,3 @@ class Buddy(QWidget):
         self.face = other_dir
         self.vx = 0
         self.set(random.choice(["wave", "cheer", "kiss"]), 90)
-
-    # ── 그리기 ────────────────────────────
-    def frame(self):
-        st = self.state
-        if st == "air":
-            if self.air_kind == "thrown":
-                return F["ball"]
-            if self.air_kind == "knocked":
-                return F["hit"] if self.knock_t > 0 else F["knocked"]
-            return F["jump"] if self.air_kind == "hop" else F["fall"]
-        if st == "walk":
-            return F["walk"][(self.anim // 8) % 4]
-        if st == "run":
-            return F["run"][(self.anim // 5) % 2]
-        if st == "roll":
-            return F["ball"]
-        if st == "idle":
-            return F["walk"][0]
-        if st == "umbrella":
-            return F["umbrella"][(self.anim // 20) % 2]
-        if st in ("rope", "rope_pause"):
-            return F["rope"]
-        if st == "wallclimb":
-            return F["wallclimb"][(self.anim // 14) % 2] if self.t <= 0 else F["wallclimb"][0]
-        if st == "dance":
-            return F["dance"][(self.anim // 12) % 2]
-        if st == "crawl":
-            return F["crawl"][(self.anim // 14) % 2]
-        if st == "persona":
-            return self.pframes[(self.anim // self.pspeed) % len(self.pframes)]
-        if st == "seq":                          # 정해진 순서대로 한 번 재생(사격·변신)
-            k, acc = self.seq_total - max(self.t, 0), 0
-            for f, d in self.seqf:
-                acc += d
-                if k < acc:
-                    return f
-            return self.seqf[-1][0]
-        if st in ("group", "tower"):
-            return self.gframe[(self.anim // 12) % len(self.gframe)]
-        if st == "gather":
-            return F["walk"][(self.anim // 8) % 4]
-        if st == "train":
-            return F["train"][(self.anim // 9) % 2] if abs(self.vx) > 0.3 else F["train"][0]
-        if st == "wiggle":
-            return F["wiggle"][(self.anim // 10) % 2]
-        v = F.get(st, 0)
-        return v[0] if isinstance(v, list) else v
-
-    def paintEvent(self, e):
-        f = self.frame()
-        if self.drag is not None:
-            f = F["fall"]
-        p = QPainter(self)
-        ball = f == F["ball"] or (f == F["knocked"] and self.state == "air")
-        if ball and self.angle:                       # 굴러갈 때만 회전 (그 외에는 미리 줄여 둔 그림을 그대로)
-            pm = self.app.pix(f, self.char)
-            p.setRenderHint(QPainter.SmoothPixmapTransform)
-            cy = self.S * (self.ftop(f) + self.fbottom(f)) / 2
-            p.translate(self.S / 2, cy)
-            p.rotate(self.angle)
-            p.scale(self.face, 1)
-            p.drawPixmap(int(-self.S / 2), int(-cy), self.S, self.S, pm)
-        else:
-            p.drawPixmap(0, 0, self.app.spix(f, self.char, self.S, self.face, self.devicePixelRatioF()))
-
-    # ── 파일 던지기 ────────────────────────────
-    def _drop_paths(self, e):
-        md = e.mimeData()
-        if not md.hasUrls():
-            return []
-        return [u.toLocalFile() for u in md.urls() if u.isLocalFile() and u.toLocalFile()]
-
-    def dragEnterEvent(self, e):
-        if self._drop_paths(e):
-            e.acceptProposedAction()
-            if self.surface and self.state not in ("sleep", "nap"):
-                self.vx = 0; self.set("surprise", 60)
-            self.say(random.choice(DROP_LINES["hover"]), 80)
-        else:
-            e.ignore()
-
-    def dragMoveEvent(self, e):
-        e.acceptProposedAction() if self._drop_paths(e) else e.ignore()
-
-    def dropEvent(self, e):
-        paths = self._drop_paths(e)
-        if not paths:
-            return
-        e.acceptProposedAction()
-        QTimer.singleShot(50, lambda: self.app.file_drop(self, paths))
-
-    # ── 마우스 ────────────────────────────
-    def mousePressEvent(self, e):
-        if e.button() == Qt.LeftButton and getattr(self, "hiding", False):   # 숨바꼭질: 찾았다!
-            self.app.hs_found(self)
-            return
-        if e.button() == Qt.LeftButton:
-            self.drag = e.globalPos() - QPoint(int(self.fx), int(self.fy))
-            self.drop_rope()
-            if self.state in ("group", "gather", "tower", "train"):
-                self.app.group_break()
-            self.moved = False
-            self.trail = [e.globalPos()]
-            self.angle = 0
-            self.update()
-
-    def mouseMoveEvent(self, e):
-        if self.drag is None:
-            return
-        if not self.moved and (e.globalPos() - self.trail[0]).manhattanLength() < 6:
-            return                                   # 손 떨림 정도는 '클릭'으로 봄
-        self.moved = True
-        p = e.globalPos() - self.drag
-        self.fx, self.fy = float(p.x()), float(p.y())
-        self.trail = (self.trail + [e.globalPos()])[-5:]
-        self.move(p)
-
-    def mouseReleaseEvent(self, e):
-        if self.drag is None or e.button() != Qt.LeftButton:
-            return
-        self.drag = None
-        if not (self.moved and len(self.trail) >= 2):
-            # 톡! → 따닥(더블클릭)일 수도 있으니 잠깐 기다렸다가 폴짝 (그 사이 제자리에 가만히)
-            self.vx = 0; self.goal = None
-            tok = object(); self._click = tok
-            QTimer.singleShot(QApplication.doubleClickInterval() + 40,
-                              lambda: self._single_click() if getattr(self, "_click", None) is tok else None)
-            return
-        self.surface = None
-        self.fall_from = self.fy
-        if self.moved and len(self.trail) >= 2:
-            d = self.trail[-1] - self.trail[0]
-            n = len(self.trail)
-            self.vx = max(-25, min(25, d.x() / n))
-            self.vy = max(-25, min(25, d.y() / n))
-            self.air_kind = "thrown" if abs(self.vx) + abs(self.vy) > 7 else "fall"
-            if self.air_kind == "thrown":
-                self.app.add_aff(self, -1)
-            self.set("air")
-        else:   # 톡! → 폴짝 + 만세
-            self.hop(11)
-            self.after = None
-
-    def _single_click(self):
-        self._click = None
-        if self.drag is not None or self not in self.app.buddies:
-            return
-        if self.surface is None or self.state in self.app.BUSY:   # 공중·매달린 중이면 예전처럼 폴짝
-            self.app.touch(self, "poke")
-            self.surface = None
-            self.fall_from = self.fy
-            self.hop(11)
-            self.after = None
-            return
-        # 땅 위에서 톡: 폴짝 뛰지 않고 제자리에서 반응 (낯가리면 깜짝, 친하면 반가워함) — 삐짐은 touch 가 처리
-        if self.state == "pout":                       # 삐진 중엔 계속 찔러도 흥! 하고 고개 돌린 채
-            self.set("pout", 120)
-            self.say("흥!", 60)
-            return
-        lv = self.app.aff_level(self.app.aff(self.char))
-        self.vx = 0; self.goal = None
-        self.set(("surprise", "surprise", "wave", "happy", "happy")[lv], 70)
-        self.app.touch(self, "poke")
-
-    def mouseDoubleClickEvent(self, e):
-        self._click = None                            # 첫 번째 '톡' 폴짝은 취소
-        self.drag = None
-        self.vx = 0
-        if self.surface is None:
-            self.stand_on(self.find_floor(self.cx, self.feet()) or self.surfaces()[-1])
-        self.set("cheer", 90)
-        if self.app.cfg.get("ask_dbl", True):          # 따닥 → 이 아이에게 Claude 로 물어보기
-            QTimer.singleShot(250, lambda: self.app.ask_claude(self))
-
-    def contextMenuEvent(self, e):
-        self.app.menu(e.globalPos(), self)

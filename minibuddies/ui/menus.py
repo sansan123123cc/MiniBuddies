@@ -5,7 +5,11 @@ import os
 from PyQt5.QtCore import QPoint, QTimer, Qt
 from PyQt5.QtWidgets import QApplication, QMenu
 from minibuddies.catalog import APP_NAME, F, OUTFIT_NAME, SCENE_MENU, SQUADS, SQUAD_NAME, TRANSFORM
-from minibuddies.features.legacy import DMODE, _ev_menu, _ev_menu_all, _osong_menu, _pepero_day
+from minibuddies.features.dorothy import DMODE
+from minibuddies.features.costumes import _ev_menu
+from minibuddies.features.costumes import _ev_menu_all
+from minibuddies.features.outfit_music import _osong_menu
+from minibuddies.features.pepero import _pepero_day
 from minibuddies.features import touhou
 from minibuddies.runtime import BASE, _crash_write
 from minibuddies.ui.dialogs import SettingsDialog

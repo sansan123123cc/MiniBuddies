@@ -36,10 +36,10 @@ MiniBuddies 폴더의 `plugins/<팩-id>/`에 `plugin.json`과 그림을 넣고 �
 
 ## 개발 파일 위치
 
-- `buddies.py`는 기존 실행 진입점이고, `minibuddies/app.py`는 앱 상태와 펫 간 상호작용을 조율합니다.
-- `minibuddies/pet.py`는 개별 펫의 상태, 이동, 프레임 재생을 담당합니다. 캐릭터 데이터는 `minibuddies/catalog.py`에 있습니다.
-- `minibuddies/ui/`에는 설정창, 우클릭 메뉴, 화면 위 위젯이 있습니다.
-- `minibuddies/features/touhou.py`에는 가드 타워와 탄막 로직이 있습니다. `features/legacy.py`는 기존 날씨·계절·변신 효과의 연결을 담당합니다.
-- `minibuddies/plugins.py`는 팩을 읽고 연결과 재생을 처리합니다. `python -m unittest discover -s tests`로 연결과 재생을 검증할 수 있습니다.
+- `buddies.py`는 기존 실행 진입점입니다. `minibuddies/app.py`는 앱을 초기화하고 `controllers/`의 캐릭터 관리, 단체 놀이, 데스크톱 연동, 배포 기능 등을 조합합니다.
+- `minibuddies/pets/`는 개별 펫의 상태, 이동, 프레임 재생, 마우스 입력을 담당합니다. 캐릭터 데이터는 `minibuddies/catalog/`에 작품·그룹별로 들어 있습니다.
+- `minibuddies/ui/`에는 설정창, 우클릭 메뉴, 화면 위 위젯이 있습니다. 설정 탭은 캐릭터, 화면, 놀이, 연동별로 나뉩니다.
+- `minibuddies/features/`는 가드 타워·탄막, 날씨, 계절 의상, 변신 등 내장 특수 행동을 기능별로 담습니다. `install_builtin()`이 기존 실행 순서대로 연결합니다.
+- `minibuddies/plugins/packs.py`가 JSON과 PNG를 읽고, `minibuddies/plugins/library.py`가 캐릭터별 연결과 재생을 처리합니다. `python -m unittest discover -s tests`로 연결과 재생을 검증할 수 있습니다.
 
-배포용 manifest는 배포 시 모듈 경로를 포함해 다시 생성해야 합니다. Android 내보내기가 `buddies.py`에서 캐릭터 데이터를 읽는다면 입력을 새 데이터 모듈에 맞춰야 합니다.
+배포용 manifest는 배포 시 모듈 경로를 포함해 다시 생성해야 합니다. Android 내보내기가 `buddies.py`에서 캐릭터 데이터를 읽는다면 입력을 `minibuddies/catalog/`에 맞춰야 합니다.
