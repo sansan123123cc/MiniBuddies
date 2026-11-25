@@ -53,8 +53,11 @@ def pack_file(folder, name):
     relative = Path(name)
     if relative.anchor or ".." in relative.parts:
         raise ValueError(f"팩 안의 상대 경로를 사용하세요 ({name})")
-    path = (folder / relative).resolve(strict=True)
-    if not path.is_relative_to(folder) or not path.is_file():
+    # 윈도우에서 한글 사용자 이름이면 임시 폴더가 8.3 짧은 이름(C:\Users\0000~1)으로 들어와서
+    # resolve() 한 파일 경로와 비교가 어긋남 → 기준 폴더도 똑같이 resolve() 해서 비교
+    root = Path(folder).resolve()
+    path = (root / relative).resolve(strict=True)
+    if not path.is_relative_to(root) or not path.is_file():
         raise ValueError(f"팩 밖의 파일은 사용할 수 없어요 ({name})")
     return path
 

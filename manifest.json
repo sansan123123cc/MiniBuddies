@@ -1,6 +1,6 @@
 {
-"build": 29926297,
-"version": "26.11.25.1237",
+"build": 29926409,
+"version": "26.11.25.1429",
 "repo": "sansan123123cc/MiniBuddies",
 "branch": "main",
 "files": {
@@ -18211,7 +18211,7 @@
 "minibuddies/plugins/actions.py": "79398430b88a125b50f8f629bf4e1b9d47e22a2409c72260ee1f5b1ee9054b58",
 "minibuddies/plugins/interactions.py": "ff01d9e777c05b0355736ced5a7a072c69e4155d6fd8f53915497f26ab3451d4",
 "minibuddies/plugins/library.py": "97a82bb0d3b79581bdfd27c34bb7dbd42e27283899849eb71b56f3067b83138c",
-"minibuddies/plugins/packs.py": "c83646b00e6e7a9a30d30eccc01c747236f6a64063c04c854729a70fb34694bb",
+"minibuddies/plugins/packs.py": "4816f2083d13d523926bba1dcc63d52f90c55e652145478892916e5248eb4ca1",
 "minibuddies/plugins/scenes.py": "72520145d3a4b5ea9f3d9aa2f16a629cf6efd415052a2f5aa8594e5e880ca53e",
 "minibuddies/runtime.py": "ed0608fbf79a984bc1cf2e66b0522f860e6773a0ebdeace8fde5213d171d932a",
 "minibuddies/ui/__init__.py": "67a57ffea56cf16d89d0170b884ed57e69a8bcf32aeb08628e08e3953be3a16e",
@@ -18243,6 +18243,7 @@
 "settings_banner.png": "48c4bf900db0cfa89c0128b7351861bb16f821e6cdb10af1259aa2a01e0109c8",
 "tests/test_editor_playback.py": "40fb9c2f04603cb925f6f982eaea43fcd13eb589abeeb755f1a2d1ea308e4599",
 "tests/test_pack_editor.py": "a88eab54275f24b1b1631a0715f91664f62c4157cd035efcf456f905ff35dcbc",
+"tests/test_pack_paths.py": "871e9d904e0a83dad93a368f8f16ffde453a90877d7bedb9eb40111d3ad64298",
 "tests/test_plugin_interactions.py": "4ef72919afe810957a0011bd91bd03d612bdbb8c4969129ffdd19e4716201da8",
 "tests/test_plugins.py": "8baf8aba9a947f4157fd836092df9acc9be7919a4f9b20e067ce8961f85a6378",
 "tests/test_window_order.py": "89560cf4c2ab006c4548719f8dee3a7d4c7d431d3e98d723ffbb224f94d968c3"
