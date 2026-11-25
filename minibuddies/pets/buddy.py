@@ -46,6 +46,7 @@ class Buddy(PetMovement, PetAnimation, PetInput, QWidget):
         self.cool = 0                # 마우스·친구 반응 쿨타임
         self.edge_cool = 0
         self.drag = None
+        self.plugin_action = None
         self.after = None            # 상태 끝나고 할 일
         scr = self.scr()
         cx = x if x is not None else random.randint(scr.left() + size, scr.right() - size)
@@ -79,6 +80,7 @@ class Buddy(PetMovement, PetAnimation, PetInput, QWidget):
 
     def set(self, st, t=0, after=None):
         prev = self.state
+        self.stop_plugin_action()
         self.align_sequence = False
         self.state, self.t, self.after = st, t, after
         if st not in ("roll",):
@@ -93,6 +95,7 @@ class Buddy(PetMovement, PetAnimation, PetInput, QWidget):
     def closeEvent(self, e):
         """펫이 화면에서 빠질 때(환경설정에서 빼기·퇴장 등) 말풍선도 같이 정리 — 안 하면 말풍선만 허공에 남음"""
         try:
+            self.stop_plugin_action()
             if self.bubble:
                 bb, self.bubble = self.bubble, None
                 bb.close()

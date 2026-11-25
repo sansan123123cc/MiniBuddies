@@ -109,6 +109,11 @@ class PetAnimation:
         self.seq_total = sum(d for _, d in self.seqf)
         self.set("seq", self.seq_total, after=after)
 
+    def stop_plugin_action(self):
+        if self.plugin_action is not None:
+            playback, self.plugin_action = self.plugin_action, None
+            playback.close()
+
     def say_later(self, ticks, text):
         QTimer.singleShot(int(ticks * TICK), lambda: self.say(text, 110) if self in self.app.buddies else None)
 

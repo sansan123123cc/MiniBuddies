@@ -1,4 +1,4 @@
-"""Transparent Qt overlays and reusable visual effects for pet interactions."""
+"""Transparent Qt overlays and reusable visual effects for pets."""
 
 import math
 
@@ -113,8 +113,31 @@ class PetEffectOverlay(QWidget):
         painter.scale(direction * pet.S / 100, pet.S / 100)
         painter.setOpacity(min(1, (age + 1) / 7, (78 - age) / 19))
         if preset in LIGHT_EFFECTS:
-            reach = max(28, abs(target.cx - pet.cx) * 100 / pet.S - 55)
+            reach = 180 if target is None else max(28, abs(target.cx - pet.cx) * 100 / pet.S - 55)
             draw_light(painter, preset, palette, age, reach)
         else:
             draw_particles(painter, preset, palette, age)
         painter.restore()
+
+
+class PluginEffectOverlay(PetEffectOverlay):
+    def __init__(self, pets, on_top):
+        self.tick = 0
+        self.bursts = []
+        super().__init__(pets, on_top)
+
+    def show_effect(self, source, target, effect, start):
+        self.bursts.append((source, target, effect, start))
+
+    def advance(self, tick):
+        self.tick = tick
+        self.bursts[:] = [burst for burst in self.bursts if tick - burst[3] < burst[2].ticks]
+        self.update()
+
+    def paintEvent(self, event):
+        painter = self.painter()
+        for source, target, effect, start in self.bursts:
+            age = (self.tick - start) * 78 / effect.ticks
+            direction = (source.face or 1) if target is None else (1 if source.cx <= target.cx else -1)
+            self.paint_spell(painter, source, target, effect.preset, effect.colors, age, direction)
+        painter.end()

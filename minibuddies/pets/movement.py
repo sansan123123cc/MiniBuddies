@@ -58,6 +58,8 @@ class PetMovement:
     # ── 매 틱 ─────────────────────────────
     def step(self):
         self.tick_bubble()
+        if self.plugin_action is not None and (self.state != "seq" or not self.isVisible()):
+            self.stop_plugin_action()
         if self.drag is not None:
             return
         if self.state == "tower":               # 인간 탑: 앱이 위치를 정함
@@ -274,6 +276,8 @@ class PetMovement:
             frame = self.frame()
             if self.align_sequence:
                 self.fy = self.surface[1] - self.S * self.fbottom(frame)
+            if self.plugin_action is not None:
+                self.plugin_action.advance(self.seq_total - self.t)
         if self.t <= 0:
             nxt, self.after = self.after, None
             if callable(nxt):

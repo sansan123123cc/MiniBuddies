@@ -1,4 +1,4 @@
-"""Manifest schema for interactions played by explicitly named characters."""
+"""Manifest schema for timed actions and interactions."""
 
 from dataclasses import dataclass
 import re
@@ -14,13 +14,14 @@ RGB = re.compile(r"#[0-9a-fA-F]{6}")
 class Effect:
     preset: str
     colors: tuple
-    target: str
+    target: str | None
     ticks: int
 
 
 @dataclass(frozen=True)
 class Beat:
     at: int
+    ticks: int
     frame: int | None
     speech: str
     effect: Effect | None
@@ -81,21 +82,21 @@ def read_effect(data, character, characters):
     ):
         raise ValueError("effect.colors에 #RRGGBB 색상을 1~6개 지정하세요")
     target = data.get("target")
-    if not isinstance(target, str) or target not in characters or target == character:
+    if characters is None and target is not None:
+        raise ValueError("개별 동작의 효과는 캐릭터가 바라보는 방향으로 재생해요")
+    if characters is not None and (not isinstance(target, str) or target not in characters or target == character):
         raise ValueError("effect.target은 상호작용에 참여하는 다른 캐릭터여야 해요")
     return Effect(name, tuple(colors), target, integer(data.get("ticks", 78), 1, 180, "effect.ticks"))
 
 
-def read_role(data, characters, sprite_id):
-    character = data["character"]
-    steps = data.get("steps")
+def read_steps(steps, sprite_id, *, character=None, characters=None):
     if not isinstance(steps, list) or not 1 <= len(steps) <= 64:
-        raise ValueError("캐릭터마다 steps를 1~64개 정의하세요")
+        raise ValueError("액션 단계를 1~64개 정의하세요")
     beats = []
     at = end = 0
     for step in steps:
         if not isinstance(step, dict):
-            raise ValueError("steps의 각 항목은 JSON 객체여야 해요")
+            raise ValueError("각 액션 단계는 JSON 객체여야 해요")
         ticks = integer(step.get("ticks"), 1, 600, "ticks")
         if "file" in step and "frame" in step:
             raise ValueError("한 단계에는 file 또는 frame 중 하나를 사용하세요")
@@ -106,11 +107,17 @@ def read_role(data, characters, sprite_id):
             frame = sprite_id(step["file"])
         speech = speech_text(step.get("say", ""))
         effect = read_effect(step["effect"], character, characters) if "effect" in step else None
-        beats.append(Beat(at, frame, speech, effect))
+        beats.append(Beat(at, ticks, frame, speech, effect))
         end = max(end, at + ticks, at + effect.ticks if effect else 0)
         at += ticks
+    return tuple(beats), end
+
+
+def read_role(data, characters, sprite_id):
+    character = data["character"]
+    beats, end = read_steps(data.get("steps"), sprite_id, character=character, characters=characters)
     builtin = frozenset(beat.frame for beat in beats if beat.frame is not None and beat.frame >= 0)
-    return Role(character, tuple(beats), builtin), end
+    return Role(character, beats, builtin), end
 
 
 def read_interaction(data, allowed, names, sprite_id):

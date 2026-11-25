@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PyQt5.QtGui import QImage, QImageReader
 
-from minibuddies.plugins.scenes import PACK_ID, action_name, integer, probability, read_interaction, speech_text
+from minibuddies.plugins.scenes import PACK_ID, action_name, probability, read_interaction, read_steps, speech_text
 
 CELL = 256
 SETTINGS_KEY = "character_plugins"
@@ -26,6 +26,7 @@ class Action:
     speech: str
     idle_chance: float
     characters: frozenset
+    events: tuple
 
 
 @dataclass(frozen=True)
@@ -119,20 +120,20 @@ def read_pack(folder, sprite_offset):
         allowed = character_ids(definition.get("characters", []))
         if characters and not allowed <= characters:
             raise ValueError("동작의 캐릭터는 팩의 characters 목록에 포함되어야 해요")
-        frames = definition.get("frames")
-        if not isinstance(frames, list) or not 1 <= len(frames) <= 64:
-            raise ValueError("행동의 프레임은 1~64개여야 해요")
+        beats, duration = read_steps(definition.get("frames"), sprite_id)
+        if duration > 1800 or sum(beat.effect is not None for beat in beats) > 24:
+            raise ValueError("한 개별 동작은 1800틱과 효과 24개 이하여야 해요")
         sequence = []
-        for frame in frames:
-            ticks = frame.get("ticks") if isinstance(frame, dict) else None
-            ticks = integer(ticks, 1, 600, "ticks")
-            if ("file" in frame) == ("frame" in frame):
-                raise ValueError("각 프레임에는 file이나 frame 중 하나를 넣으세요")
-            frame_id = sprite_id(frame["file"]) if "file" in frame else integer(frame["frame"], 0, 9999, "frame")
-            sequence.append((frame_id, ticks))
-        if sum(ticks for _, ticks in sequence) > 1800:
-            raise ValueError("한 행동의 전체 길이는 1800틱 이하여야 해요")
-        actions.append(Action(name, tuple(sequence), speech, chance, allowed))
+        frame = 0
+        for beat in beats:
+            if beat.frame is not None:
+                frame = beat.frame
+            sequence.append((frame, beat.ticks))
+        # Keep the final pose on screen until the last effect has finished.
+        last = beats[-1]
+        sequence[-1] = (frame, duration - last.at)
+        events = tuple(beat for beat in beats if beat.speech or beat.effect is not None)
+        actions.append(Action(name, tuple(sequence), speech, chance, allowed, events))
     allowed = frozenset(characters)
     interactions = tuple(read_interaction(item, allowed, names, sprite_id) for item in interactions)
     participants = frozenset().union(*(interaction.characters for interaction in interactions))

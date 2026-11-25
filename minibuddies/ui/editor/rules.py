@@ -70,7 +70,7 @@ class RuleDialog(QDialog):
 
         self.timeline = Timeline(editor, group=self.group)
         actions = QVBoxLayout()
-        actions.addWidget(QLabel("캐릭터별 동작 순서" if self.group else "프레임 재생 순서"))
+        actions.addWidget(QLabel("캐릭터별 액션 순서" if self.group else "액션 순서"))
         if not self.group:
             self.speech = QLineEdit(rule.get("say", ""))
             self.speech.setMaxLength(160)

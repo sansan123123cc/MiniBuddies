@@ -3,6 +3,7 @@
 import random
 from pathlib import Path
 
+from minibuddies.plugins.actions import ActionPlayback
 from minibuddies.plugins.interactions import InteractionLibrary
 from minibuddies.plugins.packs import SETTINGS_KEY, read_pack
 from minibuddies.plugins.scenes import PACK_ID
@@ -104,7 +105,10 @@ class PluginLibrary:
         pet.play_seq(action.frames, after=finish)
         pet.align_sequence = True
         pet.fy = pet.surface[1] - pet.S * pet.fbottom(pet.frame())
-        if action.speech:
+        if action.events:
+            pet.plugin_action = ActionPlayback(pet, action.events)
+            pet.plugin_action.advance(0, action.speech)
+        elif action.speech:
             pet.say(action.speech, min(pet.seq_total, 120))
         return True
 

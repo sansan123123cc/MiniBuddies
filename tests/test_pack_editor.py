@@ -18,6 +18,7 @@ from minibuddies import app as application
 from minibuddies.authoring.archive import export_archive, inspect_archive, load_archive
 from minibuddies.authoring.installed import install_into
 from minibuddies.authoring.project import Project, Skin
+from minibuddies.effects import EFFECT_PRESETS
 from minibuddies.ui.editor import dialog as editor_ui
 from minibuddies.ui.editor.rules import RuleDialog
 from minibuddies.ui.editor.skins import SkinDetails
@@ -70,12 +71,14 @@ class PackEditorIntegrationTest(unittest.TestCase):
         with patch.object(QFileDialog, "getOpenFileName", return_value=(str(directory / "0.png"), "")):
             editor.frames.add_image()
         self.assertEqual(editor.project.frames[0], artwork)
+        editor.frames.store({7: make_png(directory / "7.png", "#277dce")}, 7)
 
         def edit_solo(rule):
             rule.name.setText("인사하기")
             rule.trigger.setCurrentIndex(1)
             rule.chance.setValue(12.5)
             rule.speech.setText("안녕하세요!")
+            rule.timeline.add()
             rule.timeline.add()
             rule.accept()
             return rule.result()
@@ -94,7 +97,20 @@ class PackEditorIntegrationTest(unittest.TestCase):
             return rule.result()
 
         def save_step(step):
-            if step.group and step.actor == "star-cat":
+            if not step.group:
+                self.assertEqual({step.preset.itemData(i) for i in range(1, step.preset.count())}, EFFECT_PRESETS)
+                if step.previous_pose.get("frame") == 7:
+                    step.source.setCurrentIndex(step.source.findData("hold"))
+                    self.assertIsNotNone(step.preview.pixmap())
+                    step.speech.setText("별빛을 모아!")
+                    step.preset.setCurrentIndex(step.preset.findData("spark"))
+                    step.colors.setText("#277dce, #ffdb68")
+                    step.ticks.setValue(3)
+                    step.effect_ticks.setValue(12)
+                else:
+                    step.frame.setValue(7)
+                    step.ticks.setValue(2)
+            elif step.actor == "star-cat":
                 step.preset.setCurrentIndex(step.preset.findData("seal"))
             step.accept()
             return step.result()
@@ -104,8 +120,13 @@ class PackEditorIntegrationTest(unittest.TestCase):
                 editor.rules.add("actions")
             with patch.object(RuleDialog, "exec_", edit_group):
                 editor.rules.add("interactions")
-        self.assertEqual(editor.project.rules["actions"][0]["idle_chance"], 0.125)
-        self.assertEqual(editor.project.rules["actions"][0]["characters"], ["star-cat"])
+        solo = editor.project.rules["actions"][0]
+        self.assertEqual(solo["idle_chance"], 0.125)
+        self.assertEqual(solo["characters"], ["star-cat"])
+        self.assertEqual(solo["frames"], [{"frame": 7, "ticks": 2}, {
+            "ticks": 3, "say": "별빛을 모아!",
+            "effect": {"preset": "spark", "colors": ["#277dce", "#ffdb68"], "ticks": 12},
+        }])
         self.assertEqual(editor.project.rules["interactions"][0]["roles"][0]["steps"][0]["effect"]["target"], "marisa")
 
         archive = directory / "character.mbpack"
@@ -121,6 +142,7 @@ class PackEditorIntegrationTest(unittest.TestCase):
             imported.open_pack()
         preview.assert_called_once()
         self.assertEqual(imported.project.description, info["description"])
+        self.assertEqual(imported.project.rules["actions"][0], solo)
         imported.install()
         self.assertIn("star-cat", app.roster)
         self.assertEqual(app.chars["star-cat"]["label"], "별빛 고양이")
@@ -131,10 +153,42 @@ class PackEditorIntegrationTest(unittest.TestCase):
         cat = app.buddies[-1]
         self.addCleanup(cat.close)
         cat.fx = 220; cat.stand_on(cat.surfaces()[-1]); cat.set("idle", 120); cat.show()
+        cat.face = -1
         pack = next(app.plugins.available(cat.char))
         self.assertTrue(app.plugins.bind(app, cat.char, pack.id, True))
         self.assertTrue(app.plugins.play(cat, pack, pack.actions[0]))
-        self.assertEqual(cat.frame(), 0)
+        self.assertEqual(cat.frame(), 7)
+        self.assertEqual(cat.bubble.text, "안녕하세요!")
+        cat.step()
+        self.assertIsNone(cat.plugin_action.overlay)
+        cat.step()
+        self.assertEqual(cat.frame(), 7)
+        self.assertEqual(cat.bubble.text, "별빛을 모아!")
+        overlay = cat.plugin_action.overlay
+        self.assertTrue(overlay.isVisible())
+        initial = overlay.grab().toImage()
+        for _ in range(5):
+            cat.step()
+        self.assertEqual(cat.state, "seq")
+        self.assertEqual(cat.frame(), 7)
+        with patch.object(overlay, "paint_spell", wraps=overlay.paint_spell) as paint:
+            self.assertNotEqual(overlay.grab().toImage(), initial)
+            self.assertEqual(paint.call_args.args[-1], -1)
+        for _ in range(7):
+            cat.step()
+        self.assertEqual(cat.state, "idle")
+        self.assertIsNone(cat.plugin_action)
+        self.assertIsNone(cat.bubble)
+        self.assertFalse(overlay.isVisible())
+
+        self.assertTrue(app.plugins.play(cat, pack, pack.actions[0]))
+        cat.step()
+        cat.step()
+        overlay = cat.plugin_action.overlay
+        cat.fall()
+        self.assertFalse(overlay.isVisible())
+        self.assertIsNone(cat.plugin_action)
+        self.assertIsNone(cat.bubble)
 
         app.lock.close()
         with patch.object(application, "BASE", str(directory)), patch.object(application, "CHARS_DIR", str(sprites)), \

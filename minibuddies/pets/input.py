@@ -59,6 +59,7 @@ class PetInput:
             return
         if e.button() == Qt.LeftButton:
             self.drag = e.globalPos() - QPoint(int(self.fx), int(self.fy))
+            self.stop_plugin_action()
             self.drop_rope()
             if self.state in ("group", "gather", "tower", "train"):
                 self.app.group_break()

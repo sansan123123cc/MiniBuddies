@@ -3,7 +3,7 @@
 from PyQt5.QtCore import QTimer, Qt
 from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import (
-    QColorDialog, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLineEdit,
+    QColorDialog, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
     QListWidget, QPushButton, QVBoxLayout, QWidget,
 )
 
@@ -20,14 +20,13 @@ PRESETS = (
 
 
 class StepDialog(QDialog):
-    def __init__(self, parent, editor, step, group, actor, targets):
+    def __init__(self, parent, editor, step, group, actor, targets, *, previous_pose=None):
         super().__init__(parent)
         self.setWindowTitle("액션 편집")
         self.editor, self.group, self.actor = editor, group, actor
+        self.previous_pose = previous_pose or {"frame": 0}
         self.file = step.get("file")
-        kinds = [("캐릭터 프레임", "frame"), ("새 PNG 이미지", "file")]
-        if group:
-            kinds.append(("이전 포즈 유지", "hold"))
+        kinds = [("캐릭터 프레임", "frame"), ("새 PNG 이미지", "file"), ("이전 포즈 유지", "hold")]
         current = "file" if self.file else "frame" if "frame" in step else "hold"
         self.source = options(kinds, current)
         self.frame = spin(0, 9999, step.get("frame", 0))
@@ -40,25 +39,28 @@ class StepDialog(QDialog):
         form.addRow("프레임 번호", self.frame)
         form.addRow("이미지", self.file_button)
         form.addRow("재생 시간", self.ticks)
+        effect = step.get("effect", {})
+        self.speech = QLineEdit(step.get("say", ""))
+        self.speech.setMaxLength(160)
+        self.preset = options([("효과 없음", None), *PRESETS], effect.get("preset"))
+        self.colors = QLineEdit(", ".join(effect.get("colors", ["#ff7990", "#fff1cf"])))
+        self.color_button = QPushButton("색상 추가…")
+        self.color_button.clicked.connect(self.add_color)
+        palette = QHBoxLayout()
+        palette.addWidget(self.colors)
+        palette.addWidget(self.color_button)
+        self.effect_ticks = spin(1, 180, effect.get("ticks", 78), " 틱")
+        form.addRow("말풍선", self.speech)
+        form.addRow("효과", self.preset)
         if group:
-            effect = step.get("effect", {})
-            self.speech = QLineEdit(step.get("say", ""))
-            self.speech.setMaxLength(160)
-            self.preset = options([("효과 없음", None), *PRESETS], effect.get("preset"))
             self.target = options([(editor.character_label(key), key) for key in targets if key != actor], effect.get("target"))
-            self.colors = QLineEdit(", ".join(effect.get("colors", ["#ff7990", "#fff1cf"])))
-            color_button = QPushButton("색상 추가…")
-            color_button.clicked.connect(self.add_color)
-            palette = QHBoxLayout()
-            palette.addWidget(self.colors)
-            palette.addWidget(color_button)
-            self.effect_ticks = spin(1, 180, effect.get("ticks", 78), " 틱")
-            form.addRow("말풍선", self.speech)
-            form.addRow("효과", self.preset)
             form.addRow("효과 대상", self.target)
-            form.addRow("색상 (#RRGGBB)", palette)
-            form.addRow("효과 길이", self.effect_ticks)
-            self.preset.currentIndexChanged.connect(self.refresh)
+        else:
+            self.target = QLabel("캐릭터가 바라보는 방향")
+            form.addRow("효과 방향", self.target)
+        form.addRow("색상 (#RRGGBB)", palette)
+        form.addRow("효과 길이", self.effect_ticks)
+        self.preset.currentIndexChanged.connect(self.refresh)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
@@ -86,10 +88,13 @@ class StepDialog(QDialog):
         current = self.source.currentData()
         self.frame.setEnabled(current == "frame")
         self.file_button.setEnabled(current == "file")
-        if self.group:
-            for control in (self.target, self.colors, self.effect_ticks):
-                control.setEnabled(self.preset.currentData() is not None)
-        step = {"frame": self.frame.value()} if current == "frame" else {"file": self.file} if current == "file" else {}
+        for control in (self.target, self.colors, self.color_button, self.effect_ticks):
+            control.setEnabled(self.preset.currentData() is not None)
+        step = self.previous_pose
+        if current == "frame":
+            step = {"frame": self.frame.value()}
+        elif current == "file":
+            step = {"file": self.file}
         self.preview.display(self.editor.step_image(step, self.actor))
 
     def accept(self):
@@ -102,16 +107,21 @@ class StepDialog(QDialog):
                 show_error(self, "재생할 PNG를 선택하세요.")
                 return
             step["file"] = self.file
-        if self.group:
-            if self.speech.text():
-                step["say"] = self.speech.text()
-            if self.preset.currentData():
-                colors = [part.strip() for part in self.colors.text().split(",")]
-                if not 1 <= len(colors) <= 6 or any(not RGB.fullmatch(color) for color in colors) or not self.target.currentData():
-                    show_error(self, "효과 대상과 1~6개의 #RRGGBB 색상을 선택하세요.")
+        if self.speech.text():
+            step["say"] = self.speech.text()
+        if self.preset.currentData():
+            colors = [part.strip() for part in self.colors.text().split(",")]
+            if not 1 <= len(colors) <= 6 or any(not RGB.fullmatch(color) for color in colors):
+                show_error(self, "#RRGGBB 색상을 1~6개 입력하세요.")
+                return
+            effect = {"preset": self.preset.currentData(), "colors": colors, "ticks": self.effect_ticks.value()}
+            if self.group:
+                target = self.target.currentData()
+                if not target:
+                    show_error(self, "효과를 받을 참가자를 선택하세요.")
                     return
-                step["effect"] = {"preset": self.preset.currentData(), "colors": colors,
-                                  "target": self.target.currentData(), "ticks": self.effect_ticks.value()}
+                effect["target"] = target
+            step["effect"] = effect
         self.result_step = step
         super().accept()
 
@@ -165,8 +175,10 @@ class Timeline(QWidget):
         if not 0 <= row < len(self.steps):
             self.preview.display(None)
             return
-        step = next((step for step in reversed(self.steps[:row + 1]) if "frame" in step or "file" in step), {"frame": 0})
-        self.preview.display(self.editor.step_image(step, self.actor))
+        self.preview.display(self.editor.step_image(self.pose_before(row + 1), self.actor))
+
+    def pose_before(self, row):
+        return next((step for step in reversed(self.steps[:row]) if "frame" in step or "file" in step), {"frame": 0})
 
     def play(self, enabled):
         self.timer.stop()
@@ -193,7 +205,8 @@ class Timeline(QWidget):
 
     def open_step(self, row, step):
         self.play_button.setChecked(False)
-        dialog = StepDialog(self, self.editor, step, self.group, self.actor, self.targets)
+        dialog = StepDialog(self, self.editor, step, self.group, self.actor, self.targets,
+                            previous_pose=self.pose_before(row))
         if dialog.exec_() == QDialog.Accepted:
             self.steps[row:row + 1] = [dialog.result_step]
             self.refresh(row)

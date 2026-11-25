@@ -4,31 +4,8 @@ from collections import defaultdict
 import random
 import time
 
-from minibuddies.effects import PetEffectOverlay
+from minibuddies.effects import PluginEffectOverlay
 from minibuddies.group_hooks import GroupHooks, close_effect, ground_group_interrupted, restore_ground_pet
-
-
-class PluginEffectOverlay(PetEffectOverlay):
-    def __init__(self, pets, on_top):
-        self.tick = 0
-        self.bursts = []
-        super().__init__(pets, on_top)
-
-    def show_effect(self, source, target, effect, start):
-        self.bursts.append((source, target, effect, start))
-
-    def advance(self, tick):
-        self.tick = tick
-        self.bursts[:] = [burst for burst in self.bursts if tick - burst[3] < burst[2].ticks]
-        self.update()
-
-    def paintEvent(self, event):
-        painter = self.painter()
-        for source, target, effect, start in self.bursts:
-            age = (self.tick - start) * 78 / effect.ticks
-            direction = 1 if source.cx <= target.cx else -1
-            self.paint_spell(painter, source, target, effect.preset, effect.colors, age, direction)
-        painter.end()
 
 
 def start_timeline(app, group, members):
