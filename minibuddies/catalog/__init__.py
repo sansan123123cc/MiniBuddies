@@ -89,6 +89,7 @@ from minibuddies.catalog.additional_outfits import (
     VIDEO_EXT,
 )
 from minibuddies.catalog import touhou as _touhou
+from minibuddies.catalog import novelpia as _novelpia
 from minibuddies.catalog.crossover import (
     KANI_JOIN,
     KANI_NEAR,
