@@ -1,6 +1,6 @@
 {
-"build": 29926992,
-"version": "26.11.26.0012",
+"build": 29927060,
+"version": "26.11.26.0120",
 "repo": "sansan123123cc/MiniBuddies",
 "branch": "main",
 "files": {
@@ -18684,6 +18684,7 @@
 "tests/test_pack_paths.py": "871e9d904e0a83dad93a368f8f16ffde453a90877d7bedb9eb40111d3ad64298",
 "tests/test_plugin_interactions.py": "268af215645ddd0ed7d66d639f5aeb192ab7ebc20683b9d3218bfb0690adef56",
 "tests/test_plugins.py": "8baf8aba9a947f4157fd836092df9acc9be7919a4f9b20e067ce8961f85a6378",
-"tests/test_window_order.py": "89560cf4c2ab006c4548719f8dee3a7d4c7d431d3e98d723ffbb224f94d968c3"
+"tests/test_window_order.py": "89560cf4c2ab006c4548719f8dee3a7d4c7d431d3e98d723ffbb224f94d968c3",
+"usage_browser.py": "77840a2260fbec91588617885e5ca6b513e36949435df43defac8387739f5e92"
 }
 }
