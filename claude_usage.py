@@ -356,6 +356,9 @@ input.tx{flex:1;min-width:0;border:1px solid var(--ln);border-radius:6px;padding
 .ask{display:flex;flex-direction:column;gap:4px;background:#fff4f5;border:1px solid #f6c9cc;border-radius:7px;padding:5px 7px}
 .ask .t{justify-content:flex-end;gap:4px}
 .row{display:flex;gap:4px;align-items:center}
+.tt{cursor:pointer;user-select:none;display:flex;align-items:center;gap:4px;min-width:0}.tt:hover{color:#b0476f}
+.tt i{font-style:normal;font-size:10px;width:10px;color:var(--sub)}.tt em{font-style:normal;font-weight:400;font-size:11px;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sec.cl>:not(.st){display:none!important}.sec.cl .st button{display:none}
 .tip{font-size:11px;line-height:1.45;color:#6b5560;background:#fff8e6;border:1px solid #f3dfa8;border-radius:7px;padding:4px 6px}.tip b{color:#9a6a00}
 </style></head><body><div id="p" class="pywebview-drag-region">
 <div id="h"><span class="pywebview-drag-region">사용량</span><button onclick="pywebview.api.refresh()" title="지금 새로 읽기">↻</button><button id="gb" onclick="togSet()" title="보일 것 고르기">⚙</button><button onclick="pywebview.api.close()" title="닫기">×</button></div>
@@ -364,21 +367,28 @@ input.tx{flex:1;min-width:0;border:1px solid var(--ln);border-radius:6px;padding
 <label><input type="checkbox" id="on" onchange="setShow('nai',this.checked)">NovelAI 사용량</label>
 <label><input type="checkbox" id="og" onchange="setShow('gpt',this.checked)">ChatGPT 사용량 <span class="s">(크롬 필요)</span></label>
 <label><input type="checkbox" id="om" onchange="setShow('gem',this.checked)">Gemini 사용량 <span class="s">(크롬 필요)</span></label></div>
-<div class="sec" id="sc"><div class="st"><span>Claude 사용량</span><button id="ab" onclick="addOpen()" title="Claude 계정 하나 더 추가">＋ 계정</button></div>
+<div class="sec" id="sc"><div class="st"><span class="tt" onclick="tog('sc')" title="눌러서 접기/펴기"><i id="ar_sc">▾</i>Claude 사용량<em id="sm_sc"></em></span><button id="ab" onclick="addOpen()" title="Claude 계정 하나 더 추가">＋ 계정</button></div>
 <div id="add" class="row" hidden><input class="tx" id="an" maxlength="16" placeholder="이 계정 이름 (예: 회사·개인)"><button onclick="addGo()">추가</button><button class="no" onclick="addOpen(false)">취소</button></div>
 <div id="accs" class="col"><div class="s">불러오는 중…</div></div></div>
-<div class="sec" id="sn"><div class="st"><span>NovelAI 사용량</span><button onclick="naddOpen()" title="NovelAI 계정 하나 더 추가 (API 토큰으로)">＋ 계정</button></div>
+<div class="sec" id="sn"><div class="st"><span class="tt" onclick="tog('sn')" title="눌러서 접기/펴기"><i id="ar_sn">▾</i>NovelAI 사용량<em id="sm_sn"></em></span><button onclick="naddOpen()" title="NovelAI 계정 하나 더 추가 (API 토큰으로)">＋ 계정</button></div>
 <div id="nadd" class="col" hidden><div class="row"><input class="tx" id="nan" maxlength="16" placeholder="이 계정 이름 (예: 회사·개인)"></div>
 <div class="row"><input class="tx" id="nat" type="password" placeholder="pst-… 영구 API 토큰"><button onclick="naddGo()">추가</button><button class="no" onclick="naddOpen(false)">취소</button></div>
 <div class="s">토큰: NovelAI → 설정(⚙) → Account → Get Persistent API Token</div></div>
 <div id="nai" class="col"></div></div>
-<div class="sec" id="sx"><div class="st"><span>ChatGPT · Gemini</span></div><div id="ai" class="col"></div></div>
+<div class="sec" id="sx"><div class="st"><span class="tt" onclick="tog('sx')" title="눌러서 접기/펴기"><i id="ar_sx">▾</i>ChatGPT · Gemini<em id="sm_sx"></em></span></div><div id="ai" class="col"></div></div>
 <div id="f"></div></div>
 <script>
 var D={},SH={claude:true,nai:true,gpt:false,gem:false},UI={del:null,ren:null,ndel:null,nren:null};
 function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function bar(label,val,pct,c,sub){return '<div class="r"><div class="t"><b>'+esc(label)+'</b><span>'+val+'</span></div><div class="k"><i style="width:'+pct+'%'+(c?';background:'+c:'')+'"></i></div>'+(sub?'<div class="s">'+esc(sub)+'</div>':'')+'</div>'}
 function fit(){setTimeout(function(){try{pywebview.api.fit(Math.ceil(document.getElementById('p').getBoundingClientRect().height)+2)}catch(e){}},30)}
+var CL={};try{CL=JSON.parse(localStorage.getItem('cl')||'{}')||{}}catch(e){}
+function tog(id){CL[id]=!CL[id];try{localStorage.setItem('cl',JSON.stringify(CL))}catch(e){}paint()}
+function pc(rows){return (rows&&rows.length)?rows[0].pct+'%':'–'}
+function sums(d){var a=(d.accounts||[]).map(function(x){return pc(x.rows)}).join(' · ');
+  var n=(d.nais||[]).map(function(x){return (x.need_login||x.pct==null)?'–':x.pct+'% 남음'}).join(' · ');
+  var ai=d.ai||{},x=[];if(SH.gpt)x.push('GPT '+pc(ai.gpt&&ai.gpt.rows));if(SH.gem)x.push('Gemini '+pc(ai.gem&&ai.gem.rows));
+  return {sc:a,sn:n,sx:x.join(' · ')}}
 function togSet(){var e=document.getElementById('set');e.hidden=!e.hidden;fit()}
 function setShow(k,on){SH[k]=on;if(!SH.claude&&!SH.nai&&!SH.gpt&&!SH.gem){SH.claude=true}D.show={claude:SH.claude,nai:SH.nai,gpt:SH.gpt,gem:SH.gem};pywebview.api.set_show(D.show);paint()}
 function naddOpen(on){var e=document.getElementById('nadd');e.hidden=(on===false)?true:!e.hidden;if(!e.hidden){document.getElementById('nan').value='';document.getElementById('nat').value='';document.getElementById('nan').focus()}fit()}
@@ -455,7 +465,8 @@ function aiHtml(k,a){
   h+='<span class="tag"><u>'+AIN[k]+'</u></span>';
   if(a.need_login||!rows.length||a.login)h+='<button onclick="pywebview.api.ai_login(\\''+k+'\\')" title="'+esc(D.browser||'크롬')+' 로그인 창 열기/닫기">'+(a.login?'창 닫기':'로그인')+'</button>';
   h+='</div>';
-  if(a.login)h+='<div class="tip">💡 따로 열린 <b>'+esc(D.browser||'크롬')+' 창</b>에서 로그인해 주세요 — <b>구글 로그인도 돼요</b>. 사용량 숫자가 보이면 창이 저절로 닫혀요.</div>';
+  if(a.login&&!a.lopen)h+='<div class="tip">⏳ '+esc(D.browser||'크롬')+' 로그인 창을 여는 중이에요… (몇 초 걸려요)</div>';
+  if(a.lopen)h+='<div class="tip">💡 따로 열린 <b>'+esc(D.browser||'크롬')+' 창</b>에서 로그인해 주세요 — <b>구글 로그인도 돼요</b>. 사용량 숫자가 보이면 창이 저절로 닫혀요.</div>';
   rows.forEach(function(r){h+=bar(r.label,r.pct+'%',r.pct,r.pct>=95?'var(--hot)':r.pct>=80?'var(--warn)':'',r.reset)});
   if(k==='gpt'&&rows.length)h+='<div class="s">Codex·Work 공용 한도예요 (일반 채팅 한도는 안 보여 줘요)</div>';
   if(!rows.length)h+='<div class="s">'+esc(a.status||'아직 숫자가 없어요')+'</div>';
@@ -471,6 +482,8 @@ function paint(){
   document.getElementById('og').checked=SH.gpt;document.getElementById('om').checked=SH.gem;
   document.getElementById('sc').hidden=!SH.claude;document.getElementById('sn').hidden=!SH.nai;
   document.getElementById('sx').hidden=!(SH.gpt||SH.gem);
+  var sm=sums(d);['sc','sn','sx'].forEach(function(id){var c=!!CL[id];document.getElementById(id).classList.toggle('cl',c);
+    document.getElementById('ar_'+id).textContent=c?'▸':'▾';document.getElementById('sm_'+id).textContent=c&&sm[id]?' '+sm[id]:''});
   var seen={},h='';
   accs.forEach(function(a,i){var e=(a.email||'').toLowerCase(),dup=!!(e&&seen[e]);if(e)seen[e]=1;h+=accHtml(a,i,accs.length,dup)});
   if(!accs.length)h='<div class="s">등록된 계정이 없어요 — ＋ 계정으로 추가해 주세요</div>';
@@ -751,7 +764,8 @@ class Widget:
                         n["tok"] = bool(nai_token(a["id"]))
                         n["shown"] = a["id"] == MAIN and self.nw_shown
                         nais.append(n)
-                    ai = {k: dict(s, login=self.ai_lg == k) for k, s in self.ai.items()}
+                    opened = self.rb is not None and self.rb.mode == "login"
+                    ai = {k: dict(s, login=self.ai_lg == k, lopen=self.ai_lg == k and opened) for k, s in self.ai.items()}
                     bn = self.rb.name if self.rb is not None else "크롬"
                     payload = {"accounts": accs, "nais": nais, "ai": ai, "show": self.show, "browser": bn}
                 self.ui.evaluate_js("render(%s)" % json.dumps(payload, ensure_ascii=False))
@@ -1037,7 +1051,9 @@ class Widget:
                     break
                 if not self.ai[k].get("rows"):
                     self.ai_report(k, status="읽는 중…")
-                rows, st = rb.read(k)
+                rows, st = rb.read(k, cancel=lambda: bool(self.ai_lg) or not self.alive)
+                if st == "cancel":
+                    break
                 if st == "blocked" and rb.quiet == "hidden":
                     rb.quiet = "offscreen"            # 화면 없는 모드를 막는 사이트 → 화면 밖 창으로 바꿔 기억
                     rb.save_cfg(quiet="offscreen")

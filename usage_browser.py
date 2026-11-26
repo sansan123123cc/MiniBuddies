@@ -29,6 +29,23 @@ CHALLENGE = re.compile(r"(just a moment|verify you are human|사람인지 확인
 AUTH_HOST = re.compile(r"^https://(accounts\.google\.com|auth\.openai\.com|auth0\.openai\.com)/", re.I)
 
 
+LOG_MAX = 60000
+
+
+def log(d, msg):
+    """real_browser/log.txt 에 한 줄 (문제 생겼을 때 원인 찾기용, 오래된 건 잘라 냄)"""
+    try:
+        os.makedirs(d, exist_ok=True)
+        p = os.path.join(d, "log.txt")
+        if os.path.exists(p) and os.path.getsize(p) > LOG_MAX:
+            old = open(p, encoding="utf-8", errors="replace").read()[-LOG_MAX // 2:]
+            open(p, "w", encoding="utf-8").write(old)
+        with open(p, "a", encoding="utf-8") as f:
+            f.write(time.strftime("%m-%d %H:%M:%S ") + msg + "\n")
+    except Exception:
+        pass
+
+
 def parse(site, text):
     """사용량 페이지 글자 → [{label, pct(사용한 %), reset}]"""
     lines = [l.strip() for l in str(text or "").splitlines() if l.strip()]
@@ -305,6 +322,13 @@ class RealBrowser:
         else:
             args += ["--window-size=1100,860", "--window-position=120,60"]
         args += list(urls)
+        log(self.dir, "start %s %s (%s)" % (mode, self.kind, self.exe))
+        if mode == "login" and os.name == "nt":
+            try:                                      # 위젯을 누른 직후라 앞으로 나올 수 있게 허락 (안 그러면 창이 뒤에 숨음)
+                import ctypes
+                ctypes.windll.user32.AllowSetForegroundWindow(-1)
+            except Exception:
+                pass
         try:
             self.proc = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                          stderr=subprocess.DEVNULL,
@@ -320,11 +344,16 @@ class RealBrowser:
                 if self._alive_port(port):
                     self.port = port
                     self.save_cfg(pid=self.proc.pid, port=port)
+                    log(self.dir, "  ready port %s" % port)
+                    if mode == "login":
+                        self.front()
                     return None
             except Exception:
                 pass
             if self.proc.poll() is not None:
+                log(self.dir, "  exited early code %s" % self.proc.returncode)
                 break
+        log(self.dir, "  devtools port never opened")
         self.stop()
         return "%s 통로가 안 열렸어요 (다른 창이 같은 프로필을 잡고 있을 수 있어요)" % self.name
 
@@ -369,16 +398,36 @@ class RealBrowser:
         except Exception:
             pass
 
-    def read(self, site, wait=30):
-        """사용량 페이지를 새로 열어 읽음 → (rows, 상태) 상태: ok / login / blocked / fail"""
+    def front(self):
+        """로그인 창을 맨 앞으로 (다른 창 뒤에 숨지 않게)"""
+        try:
+            for t in self.pages():
+                cdp(t["webSocketDebuggerUrl"], "Page.bringToFront", timeout=4)
+                try:
+                    w = cdp(http(self.port, "GET", "/json/version", 2)["webSocketDebuggerUrl"],
+                            "Browser.getWindowForTarget", {"targetId": t["id"]}, timeout=4)
+                    cdp(http(self.port, "GET", "/json/version", 2)["webSocketDebuggerUrl"],
+                        "Browser.setWindowBounds", {"windowId": w["windowId"], "bounds": {"windowState": "normal"}},
+                        timeout=4)
+                except Exception:
+                    pass
+                break
+        except Exception:
+            pass
+
+    def read(self, site, wait=30, cancel=None):
+        """사용량 페이지를 새로 열어 읽음 → (rows, 상태) 상태: ok / login / blocked / fail / cancel"""
         t = self.tab(site)
         if not t:
+            log(self.dir, "read %s: no tab" % site)
             return [], "fail"
         self.go(t, SITES[site]["url"])
-        time.sleep(2.5)
+        t0 = time.time()
         last = {}
-        end = time.time() + wait
-        while time.time() < end:
+        while time.time() - t0 < wait:
+            if cancel and cancel():
+                return [], "cancel"
+            time.sleep(1.5)
             p = self.look(t)
             last = p or last
             rows = parse(site, p.get("t"))
@@ -387,7 +436,10 @@ class RealBrowser:
             u = p.get("u") or ""
             if AUTH_HOST.match(u):
                 return [], "login"
-            time.sleep(1.5)
+            # 로그아웃 상태면 첫 화면 '로그인' 버튼만 보임 → 오래 안 기다림
+            if time.time() - t0 > 7 and LOGIN_WORD.search(p.get("t") or "") and not RESET.search(p.get("t") or ""):
+                return [], "login"
+        log(self.dir, "read %s: gave up at %s / %r" % (site, (last.get("u") or "")[:80], (last.get("t") or "")[:160]))
         txt = (last.get("t") or "") + "\n" + (last.get("ti") or "")
         if CHALLENGE.search(txt):
             return [], "blocked"
