@@ -248,6 +248,8 @@ class RealBrowser:
         return {"chrome": "크롬", "edge": "엣지", "whale": "웨일"}.get(self.kind, "브라우저")
 
     def running(self):
+        if self.mode == "login":                      # 로그인 창은 통로 없이 띄움 → 프로그램이 살아 있는지만
+            return self.proc is not None and self.proc.poll() is None
         return self.proc is not None and self.proc.poll() is None and self.port is not None
 
     def _port_file(self):
@@ -263,6 +265,18 @@ class RealBrowser:
         """지난번 위젯이 갑자기 꺼져 남은 브라우저 정리 (같은 프로필을 잡고 있으면 새로 못 띄움)"""
         c = self.cfg()
         pid, port = c.get("pid"), c.get("port")
+        lp = c.get("login_pid")
+        if lp and os.name == "nt":                    # 지난번 로그인 창이 남아 있으면 (같은 브라우저 프로그램일 때만) 닫음
+            try:
+                out = subprocess.run(["tasklist", "/FI", "PID eq %d" % int(lp), "/NH"], capture_output=True, text=True,
+                                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout.lower()
+                if os.path.basename(self.exe or "x").lower() in out:
+                    subprocess.run(["taskkill", "/T", "/PID", str(lp)], capture_output=True,
+                                   creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                    time.sleep(1.5)
+            except Exception:
+                pass
+            self.save_cfg(login_pid=None)
         if pid and port and self._alive_port(port):
             try:
                 ws = http(port, "GET", "/json/version", 2).get("webSocketDebuggerUrl")
@@ -298,7 +312,7 @@ class RealBrowser:
                 except Exception:
                     pass
         self.proc, self.mode, self.port = None, None, None
-        self.save_cfg(pid=None, port=None)
+        self.save_cfg(pid=None, port=None, login_pid=None)
 
     def start(self, mode, urls):
         """브라우저를 띄우고 통로 포트를 얻음. 실패하면 이유 글자를 돌려줌 (성공 None)"""
@@ -311,7 +325,9 @@ class RealBrowser:
             os.remove(self._port_file())
         except Exception:
             pass
-        args = [self.exe, "--user-data-dir=" + self.prof, "--remote-debugging-port=0", "--no-first-run",
+        # 로그인 창엔 개발자 도구 통로를 안 엶 — 통로가 열린 브라우저는 구글이 '안전하지 않은 브라우저'로 보고 로그인을 막음
+        args = [self.exe, "--user-data-dir=" + self.prof] + ([] if mode == "login" else ["--remote-debugging-port=0"]) + [
+                "--no-first-run",
                 "--no-default-browser-check", "--disable-background-mode", "--disable-sync",
                 "--disable-features=msEdgeStartupBoost,msImplicitSignin,Translate", "--lang=ko-KR"]
         if mode == "hidden":
@@ -337,6 +353,14 @@ class RealBrowser:
         except Exception as e:
             return "%s 를 못 켰어요 (%s)" % (self.name, e)
         self.mode = mode
+        if mode == "login":
+            self.save_cfg(login_pid=self.proc.pid)
+            time.sleep(2)
+            if self.proc.poll() is not None:
+                log(self.dir, "  login window exited early code %s" % self.proc.returncode)
+                self.proc, self.mode = None, None
+                return "%s 로그인 창이 바로 꺼졌어요" % self.name
+            return None
         for _ in range(60):
             time.sleep(0.25)
             try:
@@ -345,8 +369,6 @@ class RealBrowser:
                     self.port = port
                     self.save_cfg(pid=self.proc.pid, port=port)
                     log(self.dir, "  ready port %s" % port)
-                    if mode == "login":
-                        self.front()
                     return None
             except Exception:
                 pass
@@ -392,6 +414,17 @@ class RealBrowser:
         except Exception:
             return {}
 
+    def title(self, t):
+        """탭 제목·주소를 페이지에 붙지 않고 목록으로만 봄 (Cloudflare '잠시만 기다리십시오' 확인 중엔 페이지를 건드리면 안 끝남)"""
+        for x in self.pages():
+            if x.get("id") == t.get("id"):
+                return x.get("title") or "", x.get("url") or ""
+        return "", ""
+
+    def checking(self, t):
+        ti, _ = self.title(t)
+        return bool(CHALLENGE.search(ti))
+
     def go(self, t, url):
         try:
             cdp(t["webSocketDebuggerUrl"], "Page.navigate", {"url": url}, timeout=8)
@@ -402,7 +435,6 @@ class RealBrowser:
         """로그인 창을 맨 앞으로 (다른 창 뒤에 숨지 않게)"""
         try:
             for t in self.pages():
-                cdp(t["webSocketDebuggerUrl"], "Page.bringToFront", timeout=4)
                 try:
                     w = cdp(http(self.port, "GET", "/json/version", 2)["webSocketDebuggerUrl"],
                             "Browser.getWindowForTarget", {"targetId": t["id"]}, timeout=4)
@@ -428,6 +460,9 @@ class RealBrowser:
             if cancel and cancel():
                 return [], "cancel"
             time.sleep(1.5)
+            if self.checking(t):                      # 사람 확인 중 → 페이지에 붙지 않고 기다림
+                last = {"ti": "Just a moment"}
+                continue
             p = self.look(t)
             last = p or last
             rows = parse(site, p.get("t"))
@@ -451,6 +486,11 @@ class RealBrowser:
         """보이는 로그인 창: 숫자가 보이면 rows, 로그인 끝나 사이트 첫 화면이면 사용량 화면으로 데려감"""
         t = self.tab(site, create=False)
         if not t:
+            return None
+        if self.checking(t):                          # 사람 확인 중엔 페이지에 안 붙음 (붙으면 확인이 안 끝날 수 있음)
+            if time.time() - nudged.get("_cf", 0) > 30:
+                nudged["_cf"] = time.time()
+                log(self.dir, "login %s: challenge page, waiting" % site)
             return None
         p = self.look(t)
         rows = parse(site, p.get("t"))

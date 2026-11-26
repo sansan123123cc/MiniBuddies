@@ -466,7 +466,7 @@ function aiHtml(k,a){
   if(a.need_login||!rows.length||a.login)h+='<button onclick="pywebview.api.ai_login(\\''+k+'\\')" title="'+esc(D.browser||'크롬')+' 로그인 창 열기/닫기">'+(a.login?'창 닫기':'로그인')+'</button>';
   h+='</div>';
   if(a.login&&!a.lopen)h+='<div class="tip">⏳ '+esc(D.browser||'크롬')+' 로그인 창을 여는 중이에요… (몇 초 걸려요)</div>';
-  if(a.lopen)h+='<div class="tip">💡 따로 열린 <b>'+esc(D.browser||'크롬')+' 창</b>에서 로그인해 주세요 — <b>구글 로그인도 돼요</b>. 사용량 숫자가 보이면 창이 저절로 닫혀요.</div>';
+  if(a.lopen)h+='<div class="tip">💡 따로 열린 <b>'+esc(D.browser||'크롬')+' 창</b>에서 로그인해 주세요 — <b>구글 로그인도 돼요</b>. 사용량 화면이 보이면 <b>그 창을 닫아 주세요</b> → 위젯이 바로 읽어 와요.</div>';
   rows.forEach(function(r){h+=bar(r.label,r.pct+'%',r.pct,r.pct>=95?'var(--hot)':r.pct>=80?'var(--warn)':'',r.reset)});
   if(k==='gpt'&&rows.length)h+='<div class="s">Codex·Work 공용 한도예요 (일반 채팅 한도는 안 보여 줘요)</div>';
   if(!rows.length)h+='<div class="s">'+esc(a.status||'아직 숫자가 없어요')+'</div>';
@@ -1008,31 +1008,20 @@ class Widget:
                 self.ai_wait(60)
                 continue
             lg = self.ai_lg if self.ai_lg in want else None
-            if lg:                                    # 로그인 창 모드
+            if lg:                                    # 로그인 창 모드 (통로 없는 보통 창 — 사용자가 닫으면 바로 읽음)
                 if rb.mode != "login":
                     err = rb.start("login", [AI_SITES[lg]["url"]])
                     if err:
                         self.ai_lg = None
                         self.ai_report(lg, status=err)
                         continue
-                    opened = lg
                     self.push()
-                elif not rb.running():                # 사용자가 창을 닫음 → 평소 읽기로
+                elif not rb.running():                # 사용자가 창을 닫음 → 바로 읽기
                     rb.stop()
                     self.ai_lg, self.ai_now = None, True
-                    self.push()
+                    self.ai_report(lg, status="읽는 중…")
                     continue
-                elif opened != lg:                    # 다른 사이트 로그인으로 바꿈 → 그 사이트 탭 열기
-                    opened = lg
-                    rb.tab(lg)
-                rows = rb.watch_login(lg, nudged)
-                if rows:
-                    self.ai_report(lg, rows=rows)
-                    self.ai_lg, self.ai_now = None, True
-                    rb.stop()
-                    self.push()
-                    continue
-                self.ai_wait(2.5)
+                self.ai_wait(2)
                 continue
             if rb.mode == "login":                    # 로그인 창을 위젯에서 닫음
                 rb.stop()

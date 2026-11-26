@@ -18567,7 +18567,7 @@
 "chars/yuni/meta_event.json": "0367eb18e5c05239b9119a53f11436c2b1bd468a511ca3e05df4c62ce2955750",
 "chars/yuni/meta_weather.json": "6510ecba2ec9d389cebae5216749562c5250b6e9b4f6047214ca7b62e950b20d",
 "chars/yuni/name.txt": "7edc5e252a02a54bab75d022623560c12bd3bdad98326ac5c16052b650a1f66e",
-"claude_usage.py": "059130f0bfd6cc0f4052de85e02f842b79d71bb7dc0b8994bb147e7e2eeacb7a",
+"claude_usage.py": "84f031dcff5990cf9b8d1aff32f22fb1d2ad87f1bb7fbd8a36d7cc847668788c",
 "devkit/EVENT_README.md": "169acda0db1515d9d0d5f1b65c03ad029fc751cffd8288967688bf82b7656786",
 "devkit/PLUGIN_README.md": "e9c4dd020c952a54d4667cdcd6b2ac09eb6e1f1ab6f7c7c0e39296aa538a6482",
 "devkit/README.md": "0d784dc4f56588d2febf20d5d5eb94d43e9275315d7acbd9382e92f7310e4a76",
@@ -18685,6 +18685,6 @@
 "tests/test_plugin_interactions.py": "268af215645ddd0ed7d66d639f5aeb192ab7ebc20683b9d3218bfb0690adef56",
 "tests/test_plugins.py": "8baf8aba9a947f4157fd836092df9acc9be7919a4f9b20e067ce8961f85a6378",
 "tests/test_window_order.py": "89560cf4c2ab006c4548719f8dee3a7d4c7d431d3e98d723ffbb224f94d968c3",
-"usage_browser.py": "1a4d5c2941d3c431ebbc5946654738a3a7862ee377d5f0758b98e90a20ca990d"
+"usage_browser.py": "6657191512bdb1b99ad78caf33350585e7f54e0b5c8c681fa3fa994793a33c46"
 }
 }
