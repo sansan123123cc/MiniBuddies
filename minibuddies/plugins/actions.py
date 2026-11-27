@@ -12,8 +12,9 @@ def close_action_bubble(pet, bubble):
 
 
 class ActionPlayback:
-    def __init__(self, pet, events):
+    def __init__(self, pet, pack_id, events):
         self.pet = pet
+        self.pack_id = pack_id
         self.events = {beat.at: beat for beat in events}
         self.motion = (compile_motion({pet.char: grounded_actor(pet)}, {pet.char: events})[pet.char]
                        if any(beat.move or beat.turn for beat in events) else None)

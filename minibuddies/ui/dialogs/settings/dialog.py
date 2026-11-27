@@ -24,6 +24,7 @@ from minibuddies.ui.dialogs.settings.activities import ActivityTabs
 from minibuddies.ui.dialogs.settings.appearance import AppearanceTabs
 from minibuddies.ui.dialogs.settings.characters import CharacterTabs
 from minibuddies.ui.dialogs.settings.integrations import IntegrationTabs
+from minibuddies.ui.dialogs.settings.packs import InstalledPacks
 from minibuddies.ui.widgets import Bubble
 
 
@@ -132,8 +133,11 @@ class SettingsDialog(CharacterTabs, AppearanceTabs, ActivityTabs, IntegrationTab
         editor_button = QPushButton("제작 에디터 열기…")
         editor_button.clicked.connect(self.open_pack_editor)
         editor_page = QWidget(); editor_layout = QVBoxLayout(editor_page)
-        editor_layout.addWidget(QLabel("캐릭터와 동작을 만들고 MiniBuddies 팩으로 공유할 수 있어요."))
-        editor_layout.addWidget(editor_button, alignment=Qt.AlignLeft); editor_layout.addStretch()
+        editor_layout.addWidget(editor_button, alignment=Qt.AlignLeft)
+        self.installed_packs = InstalledPacks(app, editor_page)
+        self.installed_packs.removed.connect(self.refresh_packs_after_removal)
+        editor_layout.addWidget(self.installed_packs)
+        editor_layout.addStretch()
         tabs.addTab(editor_page, "에디터")
         # 탭 내용이 길어도 창이 모니터 밖으로 넘치지 않게 — 탭마다 스크롤 영역으로 감싸기
         from PyQt5.QtWidgets import QScrollArea, QFrame
@@ -148,6 +152,8 @@ class SettingsDialog(CharacterTabs, AppearanceTabs, ActivityTabs, IntegrationTab
             _sa.setWidget(_w)
             tabs.insertTab(_i, _sa, _t)
         tabs.setCurrentIndex(0)
+        tabs.currentChanged.connect(
+            lambda index: self.installed_packs.refresh() if tabs.tabText(index) == "에디터" else None)
         ok, cancel, apply_ = QPushButton("확인"), QPushButton("취소"), QPushButton("적용")
         ok.setDefault(True)
         ok.clicked.connect(lambda: (self.apply(), self.close()))
@@ -178,6 +184,21 @@ class SettingsDialog(CharacterTabs, AppearanceTabs, ActivityTabs, IntegrationTab
         from minibuddies.ui.editor.dialog import PackEditor
 
         PackEditor(self.app, self).exec_()
+        self.installed_packs.refresh()
+
+    def refresh_packs_after_removal(self):
+        for char in list(self.picks):
+            if char not in self.app.chars:
+                self.picks.pop(char).hide()
+        for char, checkbox in self.picks.items():
+            checkbox.setText(self.character_pick_label(char))
+        if hasattr(self, "pick_search"):
+            if not any(checkbox.isChecked() for checkbox in self.picks.values()):
+                self.pick_set(self.app.team)
+            self.pick_filter()
+        for index in range(self.cs_pick.count() - 1, -1, -1):
+            if self.cs_pick.itemData(index) not in self.app.chars:
+                self.cs_pick.removeItem(index)
 
     # 움직임: 흔들림 · 자동 단체 놀이 · 말풍선
     def search_bar(self, tabs):
@@ -314,7 +335,7 @@ class SettingsDialog(CharacterTabs, AppearanceTabs, ActivityTabs, IntegrationTab
         for mem, mc in self.group_scr:
             want = mc.currentData() or ""
             for c in mem:
-                if CHAR_SCREEN.get(c, "") != want:
+                if c in app.chars and CHAR_SCREEN.get(c, "") != want:
                     moved.append(c)
                     if want:
                         CHAR_SCREEN[c] = want
@@ -334,7 +355,7 @@ class SettingsDialog(CharacterTabs, AppearanceTabs, ActivityTabs, IntegrationTab
                 b.drop_rope(); b.fall(vx=0)
         # 캐릭터 (한 명도 안 고르면 그대로 둠)
         if self.picks:
-            sel = [c for c in app.roster if self.picks[c].isChecked()]
+            sel = [c for c in app.roster if c in self.picks and self.picks[c].isChecked()]
             if not sel:
                 self.pick_note.setText("한 명 이상 골라 주세요 (캐릭터는 그대로 뒀어요)")
                 self.pick_set(app.team)

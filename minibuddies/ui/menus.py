@@ -30,6 +30,13 @@ class AppMenus:
             item.setToolTip("참여 펫을 같은 모니터, 같은 바닥에 가까이 두세요.")
             item.triggered.connect(lambda _checked, p=pack, i=interaction: library.play(self, p, i, pet))
 
+    def _pack_actions(self, menu, pet, pack):
+        library = self.plugins
+        for action in library.actions_for(pack, pet.char):
+            item = menu.addAction(action.label)
+            item.triggered.connect(lambda _checked, a=action: library.play(pet, pack, a, manual=True))
+            item.setEnabled(library.can_play_action(pet, action, manual=True))
+
     def plugin_menu(self, menu, pet):
         from PyQt5.QtCore import QUrl
         from PyQt5.QtGui import QDesktopServices
@@ -58,6 +65,8 @@ class AppMenus:
 
         selected = library.selected(self.cfg, pet.char)
         for pack in library.available(pet.char):
+            if pack is library.character_packs.get(pet.char):
+                continue
             options = submenu.addMenu(pack.label)
             toggle = options.addAction("이 캐릭터에 연결")
             toggle.setCheckable(True)
@@ -65,10 +74,7 @@ class AppMenus:
             toggle.toggled.connect(lambda checked, item=toggle, pack_id=pack.id: assign(item, pack_id, checked))
             if pack.id in selected:
                 options.addSeparator()
-                for action in library.actions_for(pack, pet.char):
-                    item = options.addAction(action.label)
-                    item.triggered.connect(lambda _checked, p=pack, a=action: library.play(pet, p, a))
-                    item.setEnabled(library.can_play_action(pet, action))
+                self._pack_actions(options, pet, pack)
 
     def menu(self, pos, who):
         """우클릭 메뉴: 놀이·부르기만. 설정은 '환경설정…' 창으로"""
@@ -172,6 +178,8 @@ class AppMenus:
                 a.setCheckable(True); a.setChecked(self.outfit.get(who.char) == of)
         wm = QMenu(f"{lab}이랑 놀기")              # 이 아이 전용 동작·이벤트는 한 칸 안으로
         self.plugin_menu(wm, who)
+        if pack := self.plugins.character_packs.get(who.char):
+            self._pack_actions(wm, who, pack)
         touhou.add_pet_menu(self, wm, who)
         lst = self.chars[who.char].get("persona") or []
         if lst:

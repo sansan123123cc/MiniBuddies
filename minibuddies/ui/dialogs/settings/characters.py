@@ -20,6 +20,11 @@ from minibuddies.runtime import CHARS_DIR
 
 
 class CharacterTabs:
+    def character_pick_label(self, char):
+        label = self.app.chars[char]["label"]
+        count = len(self.app.outfits.get(char, {}))
+        return f"{label} ({count}가지 모습)" if count > 1 else label
+
     # 캐릭터: 등장시킬 멤버 고르기 (그룹별 체크)
     def tab_chars(self):
         """캐릭터 고르기 — 위 검색칸(초성 가능) + 왼쪽 작품 목록(고른 수) + 오른쪽 작품별·그룹별 체크"""
@@ -99,9 +104,7 @@ class CharacterTabs:
                     g.addWidget(mc, 1000, 0, 1, 4)
                 cbs = []
                 for n, c in enumerate(mem):
-                    lab = self.app.chars[c]["label"]
-                    if c in self.app.outfits and len(self.app.outfits[c]) > 1:
-                        lab += f" ({len(self.app.outfits[c])}가지 모습)"
+                    lab = self.character_pick_label(c)
                     cb = QCheckBox(lab); cb.setChecked(c in self.app.team)
                     cb.toggled.connect(lambda _=False: self.group_labels())
                     cb._key = " ".join([lab, c, SQUAD_NAME.get(sq, "") if sq else "", fname]).lower()
@@ -154,7 +157,7 @@ class CharacterTabs:
                 n = 0
                 for c, cb in cbs:
                     k = cb._key.replace(" ", "")
-                    ok = (not q or q in k or q in self._cho(k)) and (not only or cb.isChecked())
+                    ok = c in self.picks and (not q or q in k or q in self._cho(k)) and (not only or cb.isChecked())
                     sec_any = sec_any or ok
                     ok = ok and fr_ok
                     cb.setVisible(ok)
@@ -241,7 +244,7 @@ class CharacterTabs:
             bt.setText("모두 해제" if full else "모두 선택")
         # 왼쪽 작품 목록에 '고른 수/전체', 위에 전체 고른 수
         for fname, head, boxes, item in getattr(self, "fr_sections", []):
-            cs = [cb for box, g, mem, cbs, mc in boxes for c, cb in cbs]
+            cs = [cb for box, g, mem, cbs, mc in boxes for c, cb in cbs if c in self.picks]
             on = sum(cb.isChecked() for cb in cs)
             item.setText(f"{fname}   {on}/{len(cs)}")
             head.setText(f"{fname}  ·  {on}/{len(cs)}")

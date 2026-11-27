@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 from zipfile import ZipFile
@@ -16,9 +17,10 @@ from PyQt5.QtWidgets import QApplication, QDialog, QFileDialog, QInputDialog, QM
 
 from minibuddies import app as application
 from minibuddies.authoring.archive import export_archive, inspect_archive, load_archive
-from minibuddies.authoring.installed import install_into
+from minibuddies.authoring.installed import install_into, uninstall_from
 from minibuddies.authoring.project import Project, Skin
 from minibuddies.effects import EFFECT_PRESETS
+from minibuddies.ui.dialogs.settings import packs as pack_ui
 from minibuddies.ui.editor import dialog as editor_ui
 from minibuddies.ui.editor.rules import RuleDialog
 from minibuddies.ui.editor.skins import SkinDetails
@@ -38,6 +40,143 @@ def make_png(path, color):
 
 
 class PackEditorIntegrationTest(unittest.TestCase):
+    def test_manage_installed_packs_from_settings(self):
+        root = Path(self.enterContext(TemporaryDirectory(prefix="mbpack-removal-")))
+        chars = root / "chars"
+        base = make_png(chars / "reimu" / "0.png", "#de527e")
+        other = make_png(root / "skin.png", "#8b6ec9")
+        (root / "roster.txt").write_text("reimu!", encoding="utf-8")
+        (root / "settings.json").write_text(json.dumps({"active": ["reimu"], "mcp": False, "weather": False,
+                                                       "climb": False, "on_top": False}), encoding="utf-8")
+        with (
+            patch.object(application, "BASE", str(root)),
+            patch.object(application, "CHARS_DIR", str(chars)),
+            patch.object(sys, "argv", [str(root / "buddies.py")]),
+        ):
+            app = application.App()
+        self.addCleanup(app.lock.close)
+        app.open_settings("에디터")
+        settings = app.settings_dlg
+        self.addCleanup(settings.close)
+        manager = settings.installed_packs
+        self.assertEqual(manager.list.topLevelItemCount(), 0)
+        self.assertFalse(manager.delete_button.isEnabled())
+
+        char = Project(kind="character", id="test-cat", name="여름 고양이", frames={0: base})
+        skin = Project(kind="skin", id="test-skin", name="저녁 의상", target="reimu",
+                       skins={"evening": Skin("저녁", {0: other})})
+        plugin = Project(id="test-motion", name="가벼운 동작")
+        plugin.rules["actions"] = [{"name": "자세", "frames": [{"ticks": 120, "file": plugin.add_image(other)}]}]
+        second = Project(id="test-other", name="다른 동작")
+        second.rules["actions"] = [{"name": "인사", "frames": [{"ticks": 120, "file": second.add_image(base)}]}]
+        archive = root / "shared.mbpack"
+        export_archive(plugin, archive)
+
+        with patch.object(QFileDialog, "getOpenFileName", return_value=(str(archive), "")), \
+                patch.object(pack_ui, "archive_preview", side_effect=[False, True, True]) as preview:
+            manager.install_button.click()
+            self.assertEqual(manager.list.topLevelItemCount(), 0)
+            self.assertFalse((app.content_root / plugin.id).exists())
+            manager.install_button.click()
+            self.assertEqual(preview.call_args.kwargs["accept_text"], "이 PC에 설치")
+            self.assertEqual(manager.list.currentItem().text(2), plugin.id)
+            self.assertIn("설치했어요", manager.status.text())
+            manager.install_button.click()
+            self.assertEqual(manager.list.topLevelItemCount(), 1)
+            self.assertIn("이미 있어요", manager.status.text())
+
+        def install_packs(_editor):
+            for project in (char, skin, second):
+                install_into(app, project)
+            return QDialog.Accepted
+
+        with patch.object(editor_ui.PackEditor, "exec_", install_packs):
+            settings.open_pack_editor()
+        types = {manager.list.topLevelItem(i).text(1) for i in range(manager.list.topLevelItemCount())}
+        self.assertEqual(manager.list.topLevelItemCount(), 4)
+        self.assertEqual(types, {"캐릭터", "스킨 팩", "플러그인"})
+
+        def select(key):
+            item = next(manager.list.topLevelItem(i) for i in range(manager.list.topLevelItemCount())
+                        if manager.list.topLevelItem(i).text(2) == key)
+            manager.list.setCurrentItem(item)
+
+        def trash(path):
+            folder = Path(path).resolve(strict=True)
+            self.assertEqual(folder.parent, app.content_root.resolve())
+            moved = root / "trash" / folder.name
+            moved.parent.mkdir(exist_ok=True)
+            folder.rename(moved)
+            return True
+
+        select(plugin.id)
+        with patch.object(manager, "confirm_delete", return_value=False):
+            manager.delete_button.click()
+        self.assertTrue((app.content_root / plugin.id).is_dir())
+        with patch.object(manager, "confirm_delete", return_value=True), \
+                patch("minibuddies.authoring.installed.QFile") as trash_file:
+            trash_file.return_value.moveToTrash.return_value = False
+            trash_file.return_value.errorString.return_value = "사용 중인 폴더"
+            manager.delete_button.click()
+            self.assertIn("사용 중인 폴더", manager.status.text())
+        self.assertTrue((app.content_root / plugin.id).is_dir())
+        self.assertEqual(manager.list.topLevelItemCount(), 4)
+
+        app.add(entrance="drop", char="reimu")
+        pet = app.buddies[-1]
+        self.addCleanup(pet.close)
+        pet.fx = 130
+        pet.stand_on(pet.surfaces()[-1])
+        pet.set("idle", 120)
+        app.apply_outfit("reimu", "evening")
+        app.cfg.setdefault("outfit", {})["reimu"] = "evening"
+        self.assertTrue(app.plugins.bind(app, "reimu", plugin.id, True))
+        self.assertTrue(app.plugins.bind(app, "reimu", second.id, True))
+        pack = next(p for p in app.plugins.packs if p.id == plugin.id)
+        removed_frame = pack.actions[0].frames[0][0]
+        survivor = next(p for p in app.plugins.packs if p.id == second.id)
+        frame = survivor.actions[0].frames[0][0]
+        self.assertTrue(app.plugins.play(pet, pack, pack.actions[0]))
+
+        with patch.object(manager, "confirm_delete", return_value=True), \
+                patch("minibuddies.authoring.installed.QFile",
+                      side_effect=lambda path: SimpleNamespace(moveToTrash=lambda: trash(path))) as trash_file:
+            with self.assertRaises(ValueError):
+                uninstall_from(app, "../chars")
+            trash_file.assert_not_called()
+            manager.delete_button.click()
+            self.assertEqual(manager.list.topLevelItemCount(), 3)
+            self.assertEqual(app.plugins.selected(app.cfg, "reimu"), {second.id})
+            self.assertEqual(pet.state, "idle")
+            self.assertIsNone(pet.plugin_action)
+            self.assertTrue(archive.is_file())
+            self.assertNotIn(removed_frame, app.plugins.sprites)
+            self.assertIn(frame, app.plugins.sprites)
+
+            select(skin.id)
+            manager.delete_button.click()
+            self.assertEqual(app.outfit["reimu"], "basic")
+            self.assertNotIn("evening", app.outfits["reimu"])
+            self.assertEqual(app.cfg["outfit"]["reimu"], "basic")
+
+            app.set_team([char.id])
+            app.add(entrance="drop", char=char.id)
+            cat = app.buddies[-1]
+            self.assertEqual(cat.char, char.id)
+            select(char.id)
+            manager.delete_button.click()
+            self.assertNotIn(cat, app.buddies)
+            self.assertNotIn(char.id, app.chars)
+            self.assertEqual(app.team, ["reimu"])
+            self.assertEqual(app.cfg["active"], ["reimu"])
+            self.assertEqual(manager.list.topLevelItemCount(), 1)
+            self.assertTrue((chars / "reimu" / "0.png").is_file())
+
+        install_into(app, load_archive(archive))
+        reinstalled = next(p for p in app.plugins.packs if p.id == plugin.id)
+        self.assertNotEqual(reinstalled.actions[0].frames[0][0], frame)
+        self.assertEqual(app.plugins.sprites[frame].path.parent.parent.name, second.id)
+
     def test_settings_editor_character_and_rules_round_trip(self):
         directory = Path(self.enterContext(TemporaryDirectory(prefix="mbpack-ui-")))
         sprites = directory / "chars"
@@ -156,9 +295,23 @@ class PackEditorIntegrationTest(unittest.TestCase):
         self.addCleanup(cat.close)
         cat.fx = 220; cat.stand_on(cat.surfaces()[-1]); cat.set("idle", 120); cat.show()
         cat.face = -1
-        pack = next(app.plugins.available(cat.char))
-        self.assertTrue(app.plugins.bind(app, cat.char, pack.id, True))
-        self.assertTrue(app.plugins.play(cat, pack, pack.actions[0]))
+        pack = app.plugins.character_packs[cat.char]
+        self.assertNotIn(cat.char, app.cfg.get("character_plugins", {}))
+        cat.set("run", 120)
+        self.assertFalse(app.plugins.play(cat, pack, pack.actions[0]))
+
+        def click_character_action(menu, _pos):
+            name = app.chars[cat.char]["label"]
+            play_menu = next(item.menu() for item in menu.actions() if item.text() == f"{name}이랑 놀기")
+            plugins = next(item.menu() for item in play_menu.actions() if item.text() == "플러그인")
+            self.assertNotIn(pack.label, [item.text() for item in plugins.actions()])
+            action = next(item for item in play_menu.actions() if item.text() == "인사하기")
+            self.assertTrue(action.isEnabled())
+            action.trigger()
+
+        with patch.object(QMenu, "exec_", click_character_action):
+            app.menu(QPoint(10, 10), cat)
+        self.assertEqual(cat.state, "seq")
         self.assertEqual(cat.frame(), 7)
         self.assertEqual(cat.bubble.text, "안녕하세요!")
         cat.step()
@@ -198,6 +351,8 @@ class PackEditorIntegrationTest(unittest.TestCase):
             reopened = application.App()
         reopened.lock.close()
         self.assertIn("star-cat", reopened.roster)
+        self.assertIn("star-cat", reopened.plugins.character_packs)
+        self.assertNotIn("star-cat", reopened.cfg.get("character_plugins", {}))
         self.assertEqual(reopened.plugins.selected(reopened.cfg, "star-cat"), {"star-cat"})
 
     def test_archive_rejects_extra_paths_and_preserves_export_on_failure(self):
