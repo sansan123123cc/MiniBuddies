@@ -102,9 +102,14 @@ class PluginIntegrationTest(unittest.TestCase):
         self.assertEqual(json.loads((root / "settings.json").read_text())["character_plugins"], {"reimu": ["wave-pack"]})
         self.assertFalse(app.plugins.play(marisa, pack, action))
 
+        reimu.set("run", 80)
+        group = app.group = {"mem": [marisa]}
+        self.assertFalse(app.plugins.play(reimu, pack, action))
         menu, options = pack_menu(reimu)
         self.assertTrue(options.actions()[-1].isEnabled())
         options.actions()[-1].trigger()
+        self.assertIs(app.group, group)
+        app.group = None
         self.assertEqual(reimu.state, "seq")
         self.assertEqual(reimu.frame(), action.frames[0][0])
         self.assertEqual(reimu.feet(reimu.frame()), reimu.surface[1])

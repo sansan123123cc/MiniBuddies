@@ -175,7 +175,8 @@ class App(
                 self.cfg = json.load(settings)
         except Exception:
             self.cfg = {}
-        self.plugins = PluginLibrary(os.path.join(BASE, "plugins"), _crash_write, self.content_root)
+        self.plugins = PluginLibrary(os.path.join(BASE, "plugins"), _crash_write, self.content_root,
+                                     installed_characters=custom)
         self.size = int(self.cfg.get("size", 100))
         SCREEN["name"] = self.cfg.get("screen")
         CHAR_SCREEN.clear(); CHAR_SCREEN.update(self.cfg.get("char_screen", {}))
